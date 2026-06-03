@@ -4,9 +4,9 @@
 
 **Anime streaming aggregator API — one endpoint, all your sources.**
 
-![Views](https://komarev.com/ghpvc/?username=walterwhite-69&label=Page+Views&color=blueviolet&style=flat-square)
+![Views](https://visitor-badge.laobi.icu/badge?page_id=walterwhite-69.Anivexa-API)
 [![Discord](https://img.shields.io/badge/Join%20Discord-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.com/invite/zs22ZJttZM)
-[![GitHub stars](https://img.shields.io/github/stars/walterwhite-69/all-api?style=flat-square&color=yellow)](https://github.com/walterwhite-69/all-api/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/walterwhite-69/Anivexa-API?style=flat-square&color=yellow)](https://github.com/walterwhite-69/Anivexa-API/stargazers)
 
 </div>
 
@@ -61,7 +61,7 @@ GET /stream/reanime/:id/sub|dub/:ep
 ## Self-hosted
 
 ```bash
-git clone https://github.com/walterwhite-69/all-api
+git clone https://github.com/walterwhite-69/Anivexa-API
 cd all-api
 node server.js
 ```
