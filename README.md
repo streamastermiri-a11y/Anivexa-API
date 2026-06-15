@@ -5,7 +5,7 @@
 **Anime streaming aggregator API — one endpoint, all your sources.**
 
 ![Views](https://visitor-badge.laobi.icu/badge?page_id=walterwhite-69.Anivexa-API)
-[![Discord](https://img.shields.io/badge/Join%20Discord-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.com/invite/zs22ZJttZM)
+[![Discord](https://img.shields.io/badge/Join%20Discord-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/MARQ9z9QSX)
 [![GitHub stars](https://img.shields.io/github/stars/walterwhite-69/Anivexa-API?style=flat-square&color=yellow)](https://github.com/walterwhite-69/Anivexa-API/stargazers)
 
 </div>
