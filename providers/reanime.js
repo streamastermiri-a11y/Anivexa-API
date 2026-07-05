@@ -345,8 +345,8 @@ async function decryptEmbed(html) {
     e.debug = { fields, topKeys: Object.keys(data).slice(0, 20) };
     throw e;
   }
-  const tokData = await fetch(`${FLIX}/api/m3u8/${token}`, { headers: { ...H, Referer: `${BASE}/` } }).then((r) => {
-    if (!r.ok) throw new Error(`Token API ${r.status}`);
+  const tokData = await fetch(`${FLIX}/api/m3u8/${token}`, { headers: { ...H, Referer: `${BASE}/` } }).then(async (r) => {
+    if (!r.ok) { const _raw = await r.text().catch(() => null); const _e = new Error(`Token API ${r.status}`); _e.rawBody = _raw; throw _e; }
     return r.json();
   });
   const vidKey = (await sha256hex(token + "vid")).substring(0, 10);
@@ -420,7 +420,11 @@ async function resolveIds(anilistId) {
 }
 __name(resolveIds, "resolveIds");
 async function findSlug(title2) {
-  const data = await fetch(`${BASE}/api/search?${new URLSearchParams({ q: title2, limit: 5 })}`, { headers: H }).then((r) => r.json());
+  const data = await fetch(`${BASE}/api/search?${new URLSearchParams({ q: title2, limit: 5 })}`, { headers: H }).then(async (r) => {
+    const _raw = await r.text();
+    if (!r.ok) { const _e = new Error(`reanime search ${r.status}`); _e.rawBody = _raw; throw _e; }
+    try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
+  });
   const results = Array.isArray(data) ? data : data.results ?? data.data ?? [];
   if (!results.length) throw new Error(`No reanime results for "${title2}"`);
   const id = results[0].anime_id ?? results[0].slug ?? results[0].id;
@@ -521,13 +525,15 @@ async function resolveStream3(anilistId, audio, ep) {
   const order = { "HD-2": 0, "HD-1": 1 };
   const byPrio = (arr) => arr.slice().sort((a, b) => (order[a.serverName] ?? 9) - (order[b.serverName] ?? 9));
   const [watchRes, flixRes] = await Promise.allSettled([
-    fetch(`${BASE}/api/watch/${slug}/${ep}`, { headers: H }).then((r) => {
-      if (!r.ok) throw new Error(`watch ${r.status}`);
-      return r.json();
+    fetch(`${BASE}/api/watch/${slug}/${ep}`, { headers: H }).then(async (r) => {
+      const _raw = await r.text();
+      if (!r.ok) { const _e = new Error(`watch ${r.status}`); _e.rawBody = _raw; throw _e; }
+      try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
     }),
-    fetch(`${BASE}/api/flix/${anilistId}/${ep}`, { headers: H }).then((r) => {
-      if (!r.ok) throw new Error(`flix ${r.status}`);
-      return r.json();
+    fetch(`${BASE}/api/flix/${anilistId}/${ep}`, { headers: H }).then(async (r) => {
+      const _raw = await r.text();
+      if (!r.ok) { const _e = new Error(`flix ${r.status}`); _e.rawBody = _raw; throw _e; }
+      try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
     })
   ]);
   const watchData = watchRes.status === "fulfilled" ? watchRes.value : null;
@@ -556,7 +562,7 @@ async function handleWatch3(anilistId, audio, epNum, origin) {
   try {
     resolved = await resolveStream3(anilistId, audio, ep);
   } catch (e) {
-    return json3({ error: e.message }, e.status ?? 500);
+    return json3({ error: e.message, "Raw-ERROR": e.rawBody ?? null, stack: e.stack }, e.status ?? 500);
   }
   const { title: title2, slug, watchData, stream, server, servers } = resolved;
   const redirectUrl = `${origin}/stream/reanime/${anilistId}/${audio}/${ep}`;
@@ -594,7 +600,7 @@ async function handleStream3(anilistId, audio, epNum) {
   try {
     resolved = await resolveStream3(anilistId, audio, ep);
   } catch (e) {
-    return json3({ error: e.message }, e.status ?? 500);
+    return json3({ error: e.message, "Raw-ERROR": e.rawBody ?? null, stack: e.stack }, e.status ?? 500);
   }
   return new Response(null, {
     status: 302,
@@ -660,7 +666,7 @@ var reanime_default = {
       if (m) return await handleStream3(m[1], m[2], m[3]);
       return json3({ error: "Not found", routes: ["GET /episodes/:anilistId", "GET /watch/:anilistId/sub|dub/:ep", "GET /stream/:anilistId/sub|dub/:ep", "GET /proxy?url=&referer="] }, 404);
     } catch (err) {
-      return json3({ error: err.message, ...err.debug ? { debug: err.debug } : {} }, 500);
+      return json3({ error: err.message, "Raw-ERROR": err.rawBody ?? null, ...err.debug ? { debug: err.debug } : {}, stack: err.stack }, 500);
     }
   }
 };
@@ -690,8 +696,8 @@ async function getEpisodes3(anilistId, ctx = {}) {
         image: meta.image ?? null,
         airDate: meta.airdate ?? null,
       };
-      sub.push({ ...base, id: `watch/reanime/${anilistId}/sub/reanime-${epNum}`, audio: "sub" });
-      dub.push({ ...base, id: `watch/reanime/${anilistId}/dub/reanime-${epNum}`, audio: "dub" });
+      sub.push({ id: `watch/reanime/${anilistId}/sub/reanime-${epNum}`, ...base, audio: "sub" });
+      dub.push({ id: `watch/reanime/${anilistId}/dub/reanime-${epNum}`, ...base, audio: "dub" });
     }
     sub.sort((a, b) => a.number - b.number);
     dub.sort((a, b) => a.number - b.number);
@@ -724,8 +730,8 @@ async function getEpisodes3(anilistId, ctx = {}) {
       image: meta.image ?? null,
       airDate: ep.aired ?? meta.airDate ?? null
     };
-    sub.push({ ...base, id: `watch/reanime/${anilistId}/sub/reanime-${epNum}`, audio: "sub" });
-    dub.push({ ...base, id: `watch/reanime/${anilistId}/dub/reanime-${epNum}`, audio: "dub" });
+    sub.push({ id: `watch/reanime/${anilistId}/sub/reanime-${epNum}`, ...base, audio: "sub" });
+    dub.push({ id: `watch/reanime/${anilistId}/dub/reanime-${epNum}`, ...base, audio: "dub" });
   }
   return {
     meta: { title: title2, malId },

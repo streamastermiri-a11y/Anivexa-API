@@ -92,20 +92,20 @@ async function getMedia(anilistId) {
       id,
       idMal: malId,
       title: {
-        english: d.title_english ?? null,
-        romaji: d.title ?? null,
-        native: d.title_japanese ?? null
+        english: al?.title?.english ?? d.title_english ?? null,
+        romaji: al?.title?.romaji ?? d.title ?? null,
+        native: al?.title?.native ?? d.title_japanese ?? null,
       },
-      status: STATUS_MAP[d.status] ?? "RELEASING",
-      format: d.type ?? null,
-      episodes: d.episodes ?? null,
+      status: AL_STATUS_MAP[al?.status] ?? STATUS_MAP[d.status] ?? "RELEASING",
+      format: al?.format ?? d.type ?? null,
+      episodes: al?.episodes ?? d.episodes ?? null,
       seasonYear: al?.seasonYear ?? d.year ?? null,
       startDate: al?.startDate ?? (d.aired?.from ? { year: new Date(d.aired.from).getFullYear() } : null),
       nextAiringEpisode: al?.nextAiringEpisode ?? null,
       synonyms: [
         ...(d.titles?.map((t) => t.title).filter(Boolean) ?? []),
         ...(Array.isArray(al?.synonyms) ? al.synonyms : []),
-      ]
+      ],
     };
     resolved.set(id, media);
     inflight.delete(id);

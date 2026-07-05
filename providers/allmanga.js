@@ -260,7 +260,7 @@ async function apiFetch(url) {
   const res = await fetch(url, {
     headers: { "User-Agent": UA4, "Referer": REFERER, "Origin": REFERER }
   });
-  if (!res.ok) throw new Error(`API ${res.status}`);
+  if (!res.ok) { const _raw = await res.text().catch(() => null); const _e = new Error(`API ${res.status}`); _e.rawBody = _raw; throw _e; }
   const json6 = await res.json();
   if (json6?.data?.tobeparsed) {
     const decrypted = await decryptTobeparsed(json6.data.tobeparsed);
@@ -286,7 +286,7 @@ async function apiPost(query, variables) {
     },
     body: JSON.stringify({ variables, query })
   });
-  if (!res.ok) throw new Error(`API POST ${res.status}`);
+  if (!res.ok) { const _raw = await res.text().catch(() => null); const _e = new Error(`API POST ${res.status}`); _e.rawBody = _raw; throw _e; }
   const json6 = await res.json();
   if (json6?.data?.tobeparsed) {
     const decrypted = await decryptTobeparsed(json6.data.tobeparsed);
@@ -716,7 +716,7 @@ var allmanga_default = {
         return json2(data);
       }
     } catch (err) {
-      return json2({ error: err.message, stack: err.stack }, 500);
+      return json2({ error: err.message, "Raw-ERROR": err.rawBody ?? null, stack: err.stack }, 500);
     }
   }
 };

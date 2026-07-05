@@ -134,8 +134,8 @@ function buildEpisodeLists(anilistId, series, providerEpisodes, ctx, expected) {
       airDate: meta.airDate,
       sourceNumber: src.number,
     };
-    if (src.hasSub) sub.push({ ...base, id: `watch/anineko/${anilistId}/sub/anineko-${number}`, audio: "sub" });
-    if (src.hasDub) dub.push({ ...base, id: `watch/anineko/${anilistId}/dub/anineko-${number}`, audio: "dub" });
+    if (src.hasSub) sub.push({ id: `watch/anineko/${anilistId}/sub/anineko-${number}`, ...base, audio: "sub" });
+    if (src.hasDub) dub.push({ id: `watch/anineko/${anilistId}/dub/anineko-${number}`, ...base, audio: "dub" });
   }
   return { sub, dub };
 }
@@ -177,7 +177,7 @@ export default {
       if (m) return await handleWatch(m[1], m[2], m[3]);
       return json({ error: "Not found" }, 404);
     } catch (err) {
-      return json({ error: err.message }, 500);
+      return json({ error: err.message, "Raw-ERROR": err.rawBody ?? null, stack: err.stack }, 500);
     }
   },
 };

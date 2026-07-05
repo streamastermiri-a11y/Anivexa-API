@@ -68,7 +68,7 @@ __name(getPaheBase, "getPaheBase");
 async function paheApi(params, cookies) {
   const base = getPaheBase();
   const res = await fetch(`${base}/api?${new URLSearchParams(params)}`, { headers: ph(cookies, `${base}/`, "application/json", base) });
-  if (!res.ok) throw new Error(`animepahe API ${res.status}`);
+  if (!res.ok) { const _raw = await res.text().catch(() => null); const _e = new Error(`animepahe API ${res.status}`); _e.rawBody = _raw; throw _e; }
   return res.json();
 }
 __name(paheApi, "paheApi");
@@ -107,7 +107,7 @@ async function getPaheLinks(animeSession, epSession, cookies, audioTrack) {
   const res = await fetch(playUrl, {
     headers: ph(cookies, `${getPaheBase()}/anime/${animeSession}`, "text/html,application/xhtml+xml,*/*"),
   });
-  if (!res.ok) throw new Error(`AnimePahe play page ${res.status}`);
+  if (!res.ok) { const _raw = await res.text().catch(() => null); const _e = new Error(`AnimePahe play page ${res.status}`); _e.rawBody = _raw; throw _e; }
   const html = await res.text();
 
   const wantAudio = audioTrack === "dub" ? "eng" : "jpn";
@@ -422,7 +422,7 @@ var animepahe_default = {
       if (m) return await handleWatch(m[1], m[2], m[3]);
       return json({ error: "Not found" }, 404);
     } catch (err) {
-      return json({ error: err.message }, 500);
+      return json({ error: err.message, "Raw-ERROR": err.rawBody ?? null, stack: err.stack }, 500);
     }
   }
 };

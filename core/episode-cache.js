@@ -1,6 +1,6 @@
 import { forgetMedia, getMedia } from "./anilist.js";
 import { mapAnimeIds } from "./mapper.js";
-import { buildEpisodesWithCache } from "./episode-strategy.js";
+import { buildEpisodesWithCache, buildFilteredEpisodesWithCache } from "./episode-strategy.js";
 import { get, set, getAsync, setAsync, needsRefresh, delAsync, delByPrefixAsync } from "./smartcache.js";
 
 const ANIZIP = "https://api.ani.zip/mappings";
@@ -38,7 +38,9 @@ function latestEpisodeFromResponse(data) {
 }
 
 function hasCurrentProviders(data) {
-  return data && Object.prototype.hasOwnProperty.call(data, "anidbapp");
+  return data &&
+    Object.prototype.hasOwnProperty.call(data, "anidbapp") &&
+    Object.prototype.hasOwnProperty.call(data, "anizone");
 }
 
 function latestEpisodeFromAniZip(anizip) {
@@ -55,7 +57,7 @@ function resolveShared(anilistId, freshMedia = false) {
 }
 
 async function clearProviderCache(anilistId, media) {
-  for (const p of ["pahe", "manga", "reanime", "anikoto", "animegg", "anineko", "anidbapp"]) {
+  for (const p of ["pahe", "manga", "reanime", "anikoto", "animegg", "anineko", "anidbapp", "2dhive", "anizone"]) {
     await delAsync(`epv:${p}:${anilistId}`);
   }
   if (media?.idMal) {
@@ -191,4 +193,20 @@ export async function getEpisodesResponse(anilistId, env) {
     syncing: false,
   });
   return result;
+}
+
+export async function getFilteredEpisodesResponse(anilistId, providers, includeMap) {
+  const [media, anizip] = await resolveShared(anilistId);
+
+  const [providerResult, mappingResult] = await Promise.all([
+    buildFilteredEpisodesWithCache(anilistId, providers, media, anizip),
+    includeMap ? mapAnimeIds(anilistId).catch(() => null) : Promise.resolve(null),
+  ]);
+
+  return {
+    page: 1,
+    type: "filtered",
+    ...(includeMap ? { mappings: mappingResult?.mappings ?? null } : {}),
+    ...providerResult,
+  };
 }

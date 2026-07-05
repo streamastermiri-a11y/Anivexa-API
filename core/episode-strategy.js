@@ -2,13 +2,15 @@ import {
   getAsync, setAsync, isFresh, needsRefresh,
   episodeTTL, jikanPageTTL,
 } from "./smartcache.js";
-import { getEpisodes as paheEpisodes    } from "../providers/animepahe.js";
 import { getEpisodes as mangaEpisodes   } from "../providers/allmanga.js";
 import { getEpisodes as reanimeEpisodes } from "../providers/reanime.js";
 import { getEpisodes as anikotoEpisodes } from "../providers/anikoto.js";
 import { getEpisodes as animeggEpisodes } from "../providers/animegg.js";
 import { getEpisodes as aninekoEpisodes } from "../providers/anineko.js";
 import { getEpisodes as anidbappEpisodes } from "../providers/anidbapp.js";
+import { getEpisodes as dhiveEpisodes } from "../providers/2dhive.js";
+import { getEpisodes as animenosubEpisodes } from "../providers/animenosub.js";
+import { getEpisodes as anizoneEpisodes } from "../providers/anizone.js";
 const JIKAN = "https://api.jikan.moe/v4";
 const UA    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -155,6 +157,64 @@ async function safe(label, fn) {
   catch (e) { console.error(`[ep:${label}]`, e.message); return { ok: false, error: e.message, stack: e.stack }; }
 }
 
+const PROVIDER_ALIASES = {
+  allmanga: "allmanga",
+  reanime:  "reanime",
+  anikoto:  "anikoto",
+  animegg:  "animegg",
+  anineko:  "anineko",
+  anidbapp: "anidbapp",
+  "2dhive": "2dhive",
+  animenosub: "animenosub",
+  anizone: "anizone",
+};
+
+export function resolveProviders(rawNames) {
+  const resolved = new Set();
+  const unknown  = [];
+  for (const raw of rawNames) {
+    const name = PROVIDER_ALIASES[raw.toLowerCase()];
+    if (name) resolved.add(name);
+    else unknown.push(raw);
+  }
+  return { resolved, unknown };
+}
+
+function providerFns(anilistId, status, ctx) {
+  return {
+    allmanga: () => withCache(`epv:manga:${anilistId}`,   status, () => mangaEpisodes(anilistId, ctx)),
+    reanime:  () => withCache(`epv:reanime:${anilistId}`, status, () => reanimeEpisodes(anilistId, ctx)),
+    anikoto:  () => withCache(`epv:anikoto:${anilistId}`, status, () => anikotoEpisodes(anilistId, ctx)),
+    animegg:  () => withCache(`epv:animegg:${anilistId}`, status, () => animeggEpisodes(anilistId, ctx)),
+    anineko:  () => withCache(`epv:anineko:${anilistId}`, status, () => aninekoEpisodes(anilistId, ctx)),
+    anidbapp: () => withCache(`epv:anidbapp:${anilistId}`, status, () => anidbappEpisodes(anilistId, ctx)),
+    "2dhive": () => withCache(`epv:2dhive:${anilistId}`,  status, () => dhiveEpisodes(anilistId, ctx)),
+    animenosub: () => withCache(`epv:animenosub:${anilistId}`, status, () => animenosubEpisodes(anilistId, ctx)),
+    anizone: () => withCache(`epv:anizone:${anilistId}`, status, () => anizoneEpisodes(anilistId, ctx)),
+  };
+}
+
+export async function buildFilteredEpisodesWithCache(anilistId, providers, media, anizip) {
+  const status = media?.status ?? "RELEASING";
+  const malId  = media?.idMal  ?? null;
+
+  const jikanEps = malId
+    ? await fetchAllJikanWithCache(malId, status).catch(() => null)
+    : null;
+
+  const ctx  = { media, anizip, jikanEps, maxPages: undefined };
+  const fns  = providerFns(anilistId, status, ctx);
+
+  const pairs = await Promise.all(
+    [...providers].map(async (name) => {
+      const result = await safe(name, fns[name]);
+      return [name, result.ok ? result.data : { error: result.error, stack: result.stack }];
+    })
+  );
+
+  return Object.fromEntries(pairs);
+}
+
 export async function buildEpisodesWithCache(anilistId, media, anizip) {
   const status = media?.status ?? "RELEASING";
   const malId  = media?.idMal  ?? null;
@@ -165,23 +225,27 @@ export async function buildEpisodesWithCache(anilistId, media, anizip) {
 
   const ctx = { media, anizip, jikanEps, maxPages: undefined };
 
-  const [pahe, manga, reanime, anikoto, animegg, anineko, anidbapp] = await Promise.all([
-    safe("pahe",     () => withCache(`epv:pahe:${anilistId}`,    status, () => paheEpisodes(anilistId, ctx))),
-    safe("allmanga", () => withCache(`epv:manga:${anilistId}`,   status, () => mangaEpisodes(anilistId, ctx))),
-    safe("reanime",  () => withCache(`epv:reanime:${anilistId}`, status, () => reanimeEpisodes(anilistId, ctx))),
-    safe("anikoto",  () => withCache(`epv:anikoto:${anilistId}`, status, () => anikotoEpisodes(anilistId, ctx))),
-    safe("animegg",  () => withCache(`epv:animegg:${anilistId}`, status, () => animeggEpisodes(anilistId, ctx))),
-    safe("anineko",  () => withCache(`epv:anineko:${anilistId}`, status, () => aninekoEpisodes(anilistId, ctx))),
-    safe("anidbapp", () => withCache(`epv:anidbapp:${anilistId}`, status, () => anidbappEpisodes(anilistId, ctx))),
+  const [manga, reanime, anikoto, animegg, anineko, anidbapp, dhive, animenosub, anizone] = await Promise.all([
+    safe("allmanga",   () => withCache(`epv:manga:${anilistId}`,      status, () => mangaEpisodes(anilistId, ctx))),
+    safe("reanime",    () => withCache(`epv:reanime:${anilistId}`,    status, () => reanimeEpisodes(anilistId, ctx))),
+    safe("anikoto",    () => withCache(`epv:anikoto:${anilistId}`,    status, () => anikotoEpisodes(anilistId, ctx))),
+    safe("animegg",    () => withCache(`epv:animegg:${anilistId}`,    status, () => animeggEpisodes(anilistId, ctx))),
+    safe("anineko",    () => withCache(`epv:anineko:${anilistId}`,    status, () => aninekoEpisodes(anilistId, ctx))),
+    safe("anidbapp",   () => withCache(`epv:anidbapp:${anilistId}`,   status, () => anidbappEpisodes(anilistId, ctx))),
+    safe("2dhive",     () => withCache(`epv:2dhive:${anilistId}`,     status, () => dhiveEpisodes(anilistId, ctx))),
+    safe("animenosub", () => withCache(`epv:animenosub:${anilistId}`, status, () => animenosubEpisodes(anilistId, ctx))),
+    safe("anizone",    () => withCache(`epv:anizone:${anilistId}`,    status, () => anizoneEpisodes(anilistId, ctx))),
   ]);
 
   return {
-    animepahe: pahe.ok    ? pahe.data    : { error: pahe.error,    stack: pahe.stack },
-    allmanga:  manga.ok   ? manga.data   : { error: manga.error,   stack: manga.stack },
-    reanime:   reanime.ok ? reanime.data : { error: reanime.error, stack: reanime.stack },
-    anikoto:   anikoto.ok ? anikoto.data : { error: anikoto.error, stack: anikoto.stack },
-    animegg:   animegg.ok ? animegg.data : { error: animegg.error, stack: animegg.stack },
-    anineko:   anineko.ok ? anineko.data : { error: anineko.error, stack: anineko.stack },
-    anidbapp:  anidbapp.ok ? anidbapp.data : { error: anidbapp.error, stack: anidbapp.stack },
+    allmanga:    manga.ok       ? manga.data       : { error: manga.error,       stack: manga.stack },
+    reanime:     reanime.ok     ? reanime.data     : { error: reanime.error,     stack: reanime.stack },
+    anikoto:     anikoto.ok     ? anikoto.data     : { error: anikoto.error,     stack: anikoto.stack },
+    animegg:     animegg.ok     ? animegg.data     : { error: animegg.error,     stack: animegg.stack },
+    anineko:     anineko.ok     ? anineko.data     : { error: anineko.error,     stack: anineko.stack },
+    anidbapp:    anidbapp.ok    ? anidbapp.data    : { error: anidbapp.error,    stack: anidbapp.stack },
+    "2dhive":    dhive.ok       ? dhive.data       : { error: dhive.error,       stack: dhive.stack },
+    animenosub:  animenosub.ok  ? animenosub.data  : { error: animenosub.error,  stack: animenosub.stack },
+    anizone:     anizone.ok     ? anizone.data     : { error: anizone.error,     stack: anizone.stack },
   };
 }

@@ -3,9 +3,12 @@ import worker from "./index.js";
 
 const PORT = process.env.PORT ?? 4000;
 
+const BASE = process.env.BASE_PATH ?? "";
+
 async function nodeToRequest(req) {
   const host = req.headers["host"] ?? `localhost:${PORT}`;
-  const url = `http://${host}${req.url}`;
+  const stripped = BASE && req.url.startsWith(BASE) ? req.url.slice(BASE.length) || "/" : req.url;
+  const url = `http://${host}${stripped}`;
 
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -42,7 +45,6 @@ server.listen(PORT, () => {
   console.log(`api-vexa dev server running at http://localhost:${PORT}`);
   console.log(`  GET /map/:anilistId`);
   console.log(`  GET /episodes/:anilistId`);
-  console.log(`  GET /watch/animepahe/:id/sub|dub/animepahe-:ep`);
   console.log(`  GET /watch/allmanga/:id/sub|dub/allmanga-:ep`);
   console.log(`  GET /watch/reanime/:id/sub|dub/reanime-:ep`);
   console.log(`  GET /watch/anikoto/:id/sub|dub/anikoto-:ep`);

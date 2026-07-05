@@ -1,6 +1,6 @@
 <div align="center">
 
-# Anivexa API 2.1
+# Anivexa API 2.2
 
 **Anime streaming aggregator API — one endpoint, all your sources.**
 
@@ -24,13 +24,15 @@ It's the backbone powering **[Anivexa](https://github.com/walterwhite-69/Anivexa
 
 | Provider | Status | Notes |
 |---|---|---|
-| **AnimePahe** | ⚠️ Unstable | Recently switched from DDoS-Guard to Cloudflare JS Challenge — may need updates |
-| **AllManga** | ✅ Active | Great coverage, sub + dub |
+| **AllManga** | ❌ Unusable | Cloudflare Turnstile on all pages — scraping not possible |
+| **AnimePahe** | ❌ Removed | Cloudflare JS Challenge — no reliable bypass |
 | **Reanime** | ✅ Active | Solid source for a wide range of titles |
 | **AniKoto** | ✅ Active | Good library, consistent |
-| **AnimeGG** | ✅ Active | Fuzzy title matching, handles sequels well |
+| **AnimeGG** | ✅ Active | Fuzzy title matching + compact-query fix for sequels (e.g. Re:Zero S4) |
 | **AniNeko** | ✅ Active | Reliable slug-based matching |
 | **AniDB App** | ✅ Active | Language-aware, AniDB ID backed |
+| **AniZone** | ✅ Active | HLS + subtitles, sub-only; year-based re-scoring prevents wrong-season matches |
+| **2dhive** | ✅ Active | Uses MAL ID internally; AniList ID used everywhere else |
 
 ---
 
@@ -43,8 +45,9 @@ Returns cross-platform ID mappings — MAL, TVDB, TMDB, Kitsu, AniDB, and more.
 
 ```
 GET /episodes/:anilistId
+GET /episodes/:provider[/:provider...]/:anilistId
 ```
-Returns episode lists from all providers in a single response, with smart background refresh.
+Returns episode lists in a single response with smart background refresh. Pass one or more provider names in the path to filter results — e.g. `/episodes/anizone/allmanga/16498` returns only those two. Omit providers to get all of them.
 
 ```
 GET /watch/:provider/:anilistId/sub|dub/:provider-:ep
@@ -111,6 +114,29 @@ The provider will try a direct request to `anidb.app` first. If that gets blocke
 
 ---
 
+## What changed recently
+
+### AniZone (new provider)
+- Sub-only HLS streams with subtitle and chapter support
+- Parses Alpine.js `x-data` blobs directly from the page — no API needed
+- Year-based re-scoring on `resolveSeries` prevents wrong-season matches when AniZone uses `(YEAR)` suffixes
+- Compact-query fallback (e.g. `Re:ZERO` → `ReZERO`) to catch all season variants in search
+
+### 2dhive (MAL ID fix)
+- 2dhive URLs are keyed by MAL ID, not AniList ID — fixed across all episode and stream endpoints
+- AniList ID is still used for all route IDs and response metadata; only the actual 2dhive network calls use the resolved MAL ID
+
+### AnimeGG (search fix)
+- Added compact-query fallback in `searchFn` (same strategy as AniZone) so titles like `"Re:Zero"` resolve to `"ReZero"` before hitting AnimeGG's search — catches all season slugs including `rezero-starting-life-in-another-world-season-4`
+
+### AllManga
+- Cloudflare Turnstile was added sitewide — the provider code is still present but the source is unreachable without a real browser solving the challenge. Marked unusable.
+
+### AnimePahe
+- Removed from the active provider list. Switched to Cloudflare JS Challenge; no reliable server-side bypass exists. Code retained but not wired into the episode aggregator.
+
+---
+
 ## Contributing
 
 > **Only request providers that self-host their content. No scrapers of third-party sites.**
@@ -122,12 +148,6 @@ This project is community-kept-alive — if it helps you, please:
 - ⭐ **Star the repo** so others can find it
 - 💬 **[Join the Discord](https://discord.gg/MARQ9z9QSX)** to discuss, report issues, or suggest providers
 - 🛠️ **Open a PR** if you want to add or fix something
-
----
-
-## Note on AnimePahe
-
-When this was last updated, AnimePahe switched from DDoS-Guard to a Cloudflare JS Challenge. The provider code is there but may not work reliably right now. I'll push a fix when I figure out the new bypass — or feel free to contribute one.
 
 ---
 

@@ -70,10 +70,14 @@ export function titleScore(query, candidate, slug) {
   const queryFirstNum = norm(query).match(/\d+/)?.[0] ?? "";
   const slugFirstNum = slug.match(/\d+/)?.[0] ?? "";
   if (queryFirstNum && slugFirstNum && queryFirstNum !== slugFirstNum) return base * 0.65;
+  if (queryFirstNum && !slugFirstNum) return base * 0.65;
   if (!queryFirstNum && slugFirstNum) {
     const n = parseInt(slugFirstNum);
     if (n > 1 && n < 1900) return base * (1 - 0.06 * (n - 1));
   }
+  const isMovieQuery = /\b(movie|film|the movie)\b/i.test(query);
+  const isMovieMatch = /\b(movie|film)\b/i.test(candidate) || /movie|film/.test(slug);
+  if (isMovieQuery && !isMovieMatch) return base * 0.4;
   const qLen = norm(query).length;
   const sLen = norm(slug.replace(/-/g, " ")).length;
   return sLen > qLen * 1.6 + 4 ? base * 0.8 : base;

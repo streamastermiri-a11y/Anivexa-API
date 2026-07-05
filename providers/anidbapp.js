@@ -9,45 +9,81 @@ import {
   stripTags,
 } from "../core/new-provider-utils.js";
 import { get, set, isFresh, SHOW_IDENTITY_TTL } from "../core/smartcache.js";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 const BASE = "https://anidb.app";
-const PROXY = "YOUR_PROXY_URL";
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
+const COOKIE_JAR = "/tmp/anidbapp_cookies.txt";
 
-async function fetchTextWithFallback(url, headers = {}) {
-  const merged = {
-    "User-Agent": UA,
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    ...headers,
-  };
-  const direct = await fetch(url, { headers: merged }).catch(() => null);
-  if (direct?.ok) return direct.text();
-  const ref = headers.Referer ?? `${BASE}/`;
-  const proxied = await fetch(`${PROXY}?url=${encodeURIComponent(url)}&ref=${encodeURIComponent(ref)}`, {
-    headers: { "User-Agent": UA, Accept: merged.Accept },
-  }).catch(() => null);
-  if (proxied?.ok) return proxied.text();
-  throw new Error(`HTTP ${direct?.status ?? proxied?.status ?? "failed"} fetching ${url}`);
+const NAV_HEADERS = [
+  "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language: en-US,en;q=0.9",
+  "sec-ch-ua: \"Google Chrome\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"",
+  "sec-ch-ua-mobile: ?0",
+  "sec-ch-ua-platform: \"Windows\"",
+  "sec-fetch-dest: document",
+  "sec-fetch-mode: navigate",
+  "sec-fetch-site: none",
+  "sec-fetch-user: ?1",
+  "upgrade-insecure-requests: 1",
+];
+
+const XHR_HEADERS = [
+  "Accept: application/json, text/html, */*;q=0.8",
+  "Accept-Language: en-US,en;q=0.9",
+  "sec-ch-ua: \"Google Chrome\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"",
+  "sec-ch-ua-mobile: ?0",
+  "sec-ch-ua-platform: \"Windows\"",
+  "sec-fetch-dest: empty",
+  "sec-fetch-mode: cors",
+  "sec-fetch-site: same-origin",
+  "X-Requested-With: XMLHttpRequest",
+];
+
+async function curlFetch(url, headers, extraArgs = []) {
+  const args = [
+    "-s",
+    "--compressed",
+    "-A", UA,
+    "-c", COOKIE_JAR,
+    "-b", COOKIE_JAR,
+    "-w", "\n__STATUS:%{http_code}",
+    ...headers.flatMap(h => ["-H", h]),
+    ...extraArgs,
+    url,
+  ];
+  const { stdout } = await execFileAsync("curl", args, { maxBuffer: 8 * 1024 * 1024 });
+  const sep = stdout.lastIndexOf("\n__STATUS:");
+  const status = sep >= 0 ? Number(stdout.slice(sep + 10)) : 0;
+  const body = sep >= 0 ? stdout.slice(0, sep) : stdout;
+  if (status < 200 || status >= 300) {
+    const err = new Error(`HTTP ${status} fetching ${url}`);
+    err.rawBody = body;
+    throw err;
+  }
+  return body;
 }
 
-async function fetchAnidbHtml(url, headers = {}) {
-  return fetchTextWithFallback(url, headers);
+async function fetchAnidbHtml(url, referer) {
+  const headers = referer ? [...NAV_HEADERS, `Referer: ${referer}`] : NAV_HEADERS;
+  return curlFetch(url, headers);
 }
 
-async function fetchJson(url, headers = {}) {
-  const text = await fetchTextWithFallback(url, {
-    Accept: "application/json, text/html, */*",
-    ...headers,
-  });
+async function fetchXhr(url, referer) {
+  const headers = referer ? [...XHR_HEADERS, `Referer: ${referer}`] : XHR_HEADERS;
+  return curlFetch(url, headers);
+}
+
+async function fetchJson(url, referer) {
+  const text = await fetchXhr(url, referer);
   return JSON.parse(text);
 }
 
 async function search(query) {
-  const html = await fetchAnidbHtml(`${BASE}/search/suggestions?q=${encodeURIComponent(query)}`, {
-    Referer: `${BASE}/home`,
-    "X-Requested-With": "XMLHttpRequest",
-  }).catch(() => "");
+  const html = await fetchXhr(`${BASE}/search/suggestions?q=${encodeURIComponent(query)}`, `${BASE}/home`).catch(() => "");
   const results = [];
   for (const m of html.matchAll(/<a\b[^>]*data-search-item\b[^>]*>[\s\S]*?<\/a>/gi)) {
     const tag = m[0].match(/<a\b[^>]*>/i)?.[0] ?? "";
@@ -62,9 +98,7 @@ async function search(query) {
   }
   if (results.length) return results;
 
-  const browseHtml = await fetchAnidbHtml(`${BASE}/browse?q=${encodeURIComponent(query)}`, {
-    Referer: `${BASE}/home`,
-  }).catch(() => "");
+  const browseHtml = await fetchAnidbHtml(`${BASE}/browse?q=${encodeURIComponent(query)}`, `${BASE}/home`).catch(() => "");
   const seen = new Set();
   for (const m of browseHtml.matchAll(/<a\b[^>]*href=["'](?:https:\/\/anidb\.app)?\/anime\/([^"']+)["'][^>]*class=["'][^"']*\banime-card\b[^"']*["'][^>]*>[\s\S]*?<\/a>/gi)) {
     const slug = m[1];
@@ -118,7 +152,7 @@ async function resolveSeries(anilistId, ctx = {}) {
   }));
 
   for (const candidate of candidates.values()) {
-    const html = await fetchAnidbHtml(`${BASE}/anime/${candidate.slug}`, { Referer: `${BASE}/home` }).catch(() => "");
+    const html = await fetchAnidbHtml(`${BASE}/anime/${candidate.slug}`, `${BASE}/home`).catch(() => "");
     if (!html) continue;
     const ids = parseExternalIds(html);
     if (ids.anilistId !== Number(anilistId)) continue;
@@ -137,7 +171,7 @@ async function resolveSeries(anilistId, ctx = {}) {
   const malId = media?.idMal ?? null;
   if (malId) {
     for (const candidate of candidates.values()) {
-      const html = await fetchAnidbHtml(`${BASE}/anime/${candidate.slug}`, { Referer: `${BASE}/home` }).catch(() => "");
+      const html = await fetchAnidbHtml(`${BASE}/anime/${candidate.slug}`, `${BASE}/home`).catch(() => "");
       if (!html) continue;
       const ids = parseExternalIds(html);
       if (ids.anilistId || ids.malId !== Number(malId)) continue;
@@ -158,10 +192,7 @@ async function resolveSeries(anilistId, ctx = {}) {
 }
 
 async function fetchProviderEpisodes(siteId) {
-  const data = await fetchJson(`${BASE}/api/frontend/anime/${siteId}/episodes`, {
-    Referer: `${BASE}/anime/${siteId}`,
-    "X-Requested-With": "XMLHttpRequest",
-  });
+  const data = await fetchJson(`${BASE}/api/frontend/anime/${siteId}/episodes`, `${BASE}/anime/${siteId}`);
   return Array.isArray(data.episodes) ? data.episodes : [];
 }
 
@@ -176,10 +207,7 @@ function inferOffset(providerEpisodes, expected) {
 }
 
 async function fetchLanguages(episodeId, seriesSlug) {
-  const data = await fetchJson(`${BASE}/api/frontend/episode/${episodeId}/languages`, {
-    Referer: `${BASE}/anime/${seriesSlug}`,
-    "X-Requested-With": "XMLHttpRequest",
-  }).catch(() => null);
+  const data = await fetchJson(`${BASE}/api/frontend/episode/${episodeId}/languages`, `${BASE}/anime/${seriesSlug}`).catch(() => null);
   return Array.isArray(data?.languages) ? data.languages : [];
 }
 
@@ -324,7 +352,7 @@ export default {
       if (m) return await handleWatch(m[1], m[2], m[3]);
       return json({ error: "Not found" }, 404);
     } catch (err) {
-      return json({ error: err.message }, 500);
+      return json({ error: err.message, "Raw-ERROR": err.rawBody ?? null, stack: err.stack }, 500);
     }
   },
 };

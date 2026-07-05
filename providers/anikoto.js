@@ -11,7 +11,7 @@ var SPOOF_REF = "https://hianimes.re/";
 var UA6 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 async function httpGet(url, headers = {}) {
   const res = await fetch(url, { headers: { "User-Agent": UA6, Accept: "text/html,*/*", ...headers } });
-  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+  if (!res.ok) { const _raw = await res.text().catch(() => null); const _e = new Error(`HTTP ${res.status} fetching ${url}`); _e.rawBody = _raw; throw _e; }
   return res.text();
 }
 __name(httpGet, "httpGet");
@@ -30,7 +30,7 @@ async function getJSON(url, headers = {}, retries = 4) {
         continue;
       }
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+    if (!res.ok) { const _raw = await res.text().catch(() => null); const _e = new Error(`HTTP ${res.status} fetching ${url}`); _e.rawBody = _raw; throw _e; }
     return res.json();
   }
   throw new Error(`HTTP 429 fetching ${url} (exhausted retries)`);
@@ -437,8 +437,8 @@ async function getEpisodes4(anilistId, ctx = {}) {
         hasSub: epHasSub,
         hasDub: epHasDub,
       };
-      if (epHasSub) sub.push({ ...base, id: `watch/anikoto/${anilistId}/sub/anikoto-${epNum}`, audio: "sub" });
-      if (epHasDub) dub.push({ ...base, id: `watch/anikoto/${anilistId}/dub/anikoto-${epNum}`, audio: "dub" });
+      if (epHasSub) sub.push({ id: `watch/anikoto/${anilistId}/sub/anikoto-${epNum}`, ...base, audio: "sub" });
+      if (epHasDub) dub.push({ id: `watch/anikoto/${anilistId}/dub/anikoto-${epNum}`, ...base, audio: "dub" });
     }
     sub.sort((a, b) => a.number - b.number);
     dub.sort((a, b) => a.number - b.number);
@@ -488,8 +488,8 @@ async function getEpisodes4(anilistId, ctx = {}) {
       hasSub: epHasSub,
       hasDub: epHasDub
     };
-    if (epHasSub) sub.push({ ...base, id: `watch/anikoto/${anilistId}/sub/anikoto-${epNum}`, audio: "sub" });
-    if (epHasDub) dub.push({ ...base, id: `watch/anikoto/${anilistId}/dub/anikoto-${epNum}`, audio: "dub" });
+    if (epHasSub) sub.push({ id: `watch/anikoto/${anilistId}/sub/anikoto-${epNum}`, ...base, audio: "sub" });
+    if (epHasDub) dub.push({ id: `watch/anikoto/${anilistId}/dub/anikoto-${epNum}`, ...base, audio: "dub" });
   }
   return {
     meta: { malId },
@@ -516,7 +516,7 @@ var anikoto_default = {
       }
       return json4({ error: "Not found" }, 404);
     } catch (err) {
-      return json4({ error: err.message }, 500);
+      return json4({ error: err.message, "Raw-ERROR": err.rawBody ?? null, stack: err.stack }, 500);
     }
   }
 };

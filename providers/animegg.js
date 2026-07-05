@@ -124,6 +124,21 @@ async function scrapeEpisodeWatch(epSlug, audio) {
   return { title, streams: results.flatMap((r) => r.status === "fulfilled" ? r.value : []) };
 }
 
+async function searchFn(query) {
+  const r1 = await search(query);
+  // AnimeGG needs a plain alphanumeric token to surface all season variants.
+  // "Re:Zero" → 0 results; "ReZero" → all slugs including season-4.
+  const compact = query.split(/\s+/)[0].replace(/[^a-zA-Z0-9]/g, "");
+  if (compact.length >= 4 && compact.toLowerCase() !== query.toLowerCase()) {
+    try {
+      const r2 = await search(compact);
+      const seen = new Set(r1.map(r => r.slug));
+      r2.forEach(r => { if (!seen.has(r.slug)) r1.push(r); });
+    } catch {}
+  }
+  return r1;
+}
+
 async function resolveSeries(anilistId, ctx = {}) {
   const cacheKey = `np:animegg:${anilistId}`;
   const cached = get(cacheKey);
@@ -131,7 +146,7 @@ async function resolveSeries(anilistId, ctx = {}) {
 
   const media = ctx.media ?? await getMedia(anilistId);
   const titles = buildTitles(media, ctx.anizip);
-  const candidates = await findTopSlugs(titles, search);
+  const candidates = await findTopSlugs(titles, searchFn);
   const expected = expectedCount(media, ctx.anizip, ctx.jikanEps);
   const offset = await getPrequelOffset(anilistId).catch(() => 0);
   const isSingleMovie = String(media?.format ?? "").toUpperCase() === "MOVIE" || expected === 1;
@@ -208,7 +223,7 @@ export default {
       if (m) return await handleWatch(m[1], m[2], m[3]);
       return json({ error: "Not found" }, 404);
     } catch (err) {
-      return json({ error: err.message }, 500);
+      return json({ error: err.message, "Raw-ERROR": err.rawBody ?? null, stack: err.stack }, 500);
     }
   },
 };
