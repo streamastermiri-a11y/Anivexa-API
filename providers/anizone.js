@@ -2,17 +2,64 @@ import { getMedia } from "../core/anilist.js";
 import {
   buildTitles,
   decodeEntities,
+  diceCoeff,
   episodeMeta,
   expectedCount,
   fetchHtml,
-  findTopSlugs,
   getPrequelOffset,
   json,
+  norm,
   selectSeries,
 } from "../core/new-provider-utils.js";
 import { get, set, isFresh, SHOW_IDENTITY_TTL } from "../core/smartcache.js";
 
 const BASE = "https://anizone.to";
+
+function scoreCandidate(query, candidate, slug) {
+  const base = Math.max(diceCoeff(query, candidate), diceCoeff(query, slug.replace(/-/g, " ")));
+  const isMovieQuery = /\b(movie|film|the movie)\b/i.test(query);
+  const isMovieMatch = /\b(movie|film)\b/i.test(candidate) || /movie|film/.test(slug);
+  if (isMovieQuery && !isMovieMatch) return base * 0.4;
+  const qLen = norm(query).length;
+  const sLen = norm(slug.replace(/-/g, " ")).length;
+  return sLen > qLen * 1.6 + 4 ? base * 0.8 : base;
+}
+
+function buildSearchQueries(title) {
+  const queries = new Set([title]);
+  const words = title.trim().split(/\s+/);
+  if (words.length > 4) queries.add(words.slice(0, 4).join(" "));
+  if (words.length > 3) queries.add(words.slice(0, 3).join(" "));
+  const stripped = title
+    .replace(/\bseason\s*\d+\b/gi, "")
+    .replace(/\bpart\s*\d+\b/gi, "")
+    .replace(/\b\d+rd\b|\b\d+th\b|\b\d+st\b|\b\d+nd\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripped && stripped !== title) queries.add(stripped);
+  return [...queries].filter((q) => q.length >= 3);
+}
+
+async function findCandidates(titles, searchFn, n = 6) {
+  const allCandidates = new Map();
+  const searchQueries = new Set();
+  for (const title of titles.slice(0, 4)) {
+    for (const q of buildSearchQueries(title)) searchQueries.add(q);
+  }
+  await Promise.all([...searchQueries].map(async (q) => {
+    try {
+      const results = await searchFn(q);
+      for (const r of results) if (!allCandidates.has(r.slug)) allCandidates.set(r.slug, r.text);
+    } catch {}
+  }));
+  const scored = [];
+  for (const [slug, text] of allCandidates) {
+    let best = 0;
+    for (const title of titles.slice(0, 2)) best = Math.max(best, scoreCandidate(title, text, slug));
+    if (best >= 0.5) scored.push({ slug, title: text, score: best });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, n);
+}
 
 function processJsonArg(raw) {
   const PH = "\x01U\x01";
@@ -138,7 +185,7 @@ async function resolveSeries(anilistId, ctx = {}) {
 
   const media = ctx.media ?? await getMedia(anilistId);
   const titles = buildTitles(media, ctx.anizip);
-  let candidates = await findTopSlugs(titles, searchFn);
+  let candidates = await findCandidates(titles, searchFn);
 
   // AniZone uses "(YEAR)" suffixes for sequel seasons instead of slug numbers.
   // When seasonYear is available and any candidate carries a year, re-score so the

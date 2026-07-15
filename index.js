@@ -9,6 +9,7 @@ import anidbappHandler             from "./providers/anidbapp.js";
 import dhiveHandler                from "./providers/2dhive.js";
 import animenosubHandler           from "./providers/animenosub.js";
 import anizoneHandler              from "./providers/anizone.js";
+import anibdHandler                from "./providers/anibd.js";
 import { getEpisodesResponse, getFilteredEpisodesResponse } from "./core/episode-cache.js";
 import { resolveProviders }         from "./core/episode-strategy.js";
 import { getAsync, setAsync, isFresh, mapTTL, WATCH_TTL, _CACHE_ENABLED } from "./core/smartcache.js";
@@ -212,6 +213,15 @@ export default {
       );
     }
 
+    m = path.match(/^\/watch\/anibd\/(\d+)\/(sub|dub)\/anibd-(\d+)\/?$/);
+    if (m) {
+      const [, id, audio, ep] = m;
+      return cachedWatch(
+        `watch:anibd:${id}:${audio}:${ep}`,
+        () => anibdHandler.fetch(request)
+      );
+    }
+
     m = path.match(/^\/stream\/2dhive\/(\d+)\/(sub|dub)\/(\d+)\/?$/);
     if (m) return dhiveHandler.fetch(request);
 
@@ -231,6 +241,7 @@ export default {
         "2dhive",
         "animenosub",
         "anizone",
+        "anibd",
       ],
       routes: [
         "/map/:anilistId",
@@ -248,6 +259,7 @@ export default {
         "/stream/2dhive/download/:id/sub|dub/:ep",
         "/watch/animenosub/:id/sub|dub/animenosub-:ep",
         "/watch/anizone/:id/sub|dub/anizone-:ep",
+        "/watch/anibd/:id/sub|dub/anibd-:ep",
       ],
     });
   },

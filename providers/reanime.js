@@ -1,9 +1,10 @@
 const __name = (fn, _) => fn;
 import { getMedia } from '../core/anilist.js';
+import { buildTitles } from '../core/new-provider-utils.js';
+import { get as cacheGet, set as cacheSet, isFresh as cacheIsFresh, SHOW_IDENTITY_TTL } from '../core/smartcache.js';
 
 var BASE = "https://reanime.to";
 var FLIX = "https://flixcloud.cc";
-var JIKAN3 = "https://api.jikan.moe/v4";
 var ANIZIP2 = "https://api.ani.zip/mappings";
 var UA5 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 var H = { "User-Agent": UA5, Accept: "application/json, */*" };
@@ -406,122 +407,144 @@ async function decryptEmbed(html) {
   };
 }
 __name(decryptEmbed, "decryptEmbed");
-async function resolveIds(anilistId) {
-  const [media, anizip] = await Promise.all([
-    getMedia(anilistId),
-    fetch(`${ANIZIP2}?anilist_id=${anilistId}`).then((r) => r.json()).catch(() => null)
-  ]);
-  if (!media) throw new Error(`AniList ID ${anilistId} not found`);
-  return {
-    title: media.title.english || media.title.romaji,
-    malId: media.idMal,
-    anizip: anizip ?? null
-  };
-}
-__name(resolveIds, "resolveIds");
-async function findSlug(title2) {
-  const data = await fetch(`${BASE}/api/search?${new URLSearchParams({ q: title2, limit: 5 })}`, { headers: H }).then(async (r) => {
+async function searchReanime(query) {
+  const data = await fetch(`${BASE}/api/v1/search?${new URLSearchParams({ q: query, limit: 10 })}`, { headers: H }).then(async (r) => {
     const _raw = await r.text();
     if (!r.ok) { const _e = new Error(`reanime search ${r.status}`); _e.rawBody = _raw; throw _e; }
     try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
   });
-  const results = Array.isArray(data) ? data : data.results ?? data.data ?? [];
-  if (!results.length) throw new Error(`No reanime results for "${title2}"`);
-  const id = results[0].anime_id ?? results[0].slug ?? results[0].id;
-  if (!id) throw new Error("Could not extract anime_id from reanime result");
-  return id;
+  return Array.isArray(data?.results) ? data.results : [];
 }
-__name(findSlug, "findSlug");
-async function jikanFetch2(url, retries = 4) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(url, { headers: { "User-Agent": UA5, Accept: "application/json" } });
-    if (res.status === 429) {
-      const wait = (parseInt(res.headers.get("Retry-After") ?? "1") || 1) * 1e3 + attempt * 500;
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, wait));
-        continue;
-      }
-      return null;
+__name(searchReanime, "searchReanime");
+async function fetchAnimeDetail(animeId) {
+  const res = await fetch(`${BASE}/api/v1/anime/${animeId}`, { headers: H });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+__name(fetchAnimeDetail, "fetchAnimeDetail");
+async function resolveSeries(anilistId, ctx = {}) {
+  const cacheKey = `np:reanime:${anilistId}`;
+  const cached = cacheGet(cacheKey);
+  if (cacheIsFresh(cached)) return cached.data;
+
+  const media = ctx.media ?? await getMedia(anilistId);
+  const malId = media?.idMal ?? null;
+  const queries = buildTitles(media, ctx.anizip).slice(0, 5);
+
+  const candidates = new Map();
+  await Promise.all(queries.map(async (q) => {
+    for (const r of await searchReanime(q).catch(() => [])) {
+      if (r?.anime_id && !candidates.has(r.anime_id)) candidates.set(r.anime_id, r);
     }
-    if (!res.ok) return null;
-    return res.json();
+  }));
+
+  const details = await Promise.all(
+    [...candidates.keys()].map(async (id) => ({ id, detail: await fetchAnimeDetail(id).catch(() => null) }))
+  );
+
+  for (const { id, detail } of details) {
+    if (detail?.anilist_id && Number(detail.anilist_id) === Number(anilistId)) {
+      const data = {
+        animeId: id,
+        title: detail.title?.english || detail.title?.romaji || candidates.get(id)?.title?.english || id,
+        anilistId: Number(anilistId),
+        malId: detail.mal_id || null,
+        subbed: Number.isFinite(detail.subbed) ? detail.subbed : null,
+        dubbed: Number.isFinite(detail.dubbed) ? detail.dubbed : null,
+        episodesCount: Number.isFinite(detail.episodes) ? detail.episodes : null,
+        matchType: "anilist",
+        matchScore: 1,
+      };
+      cacheSet(cacheKey, data, SHOW_IDENTITY_TTL);
+      return data;
+    }
   }
-  return null;
+
+  if (malId) {
+    for (const { id, detail } of details) {
+      const detailMal = detail?.mal_id;
+      if (detailMal && Number(detailMal) === Number(malId)) {
+        const data = {
+          animeId: id,
+          title: detail.title?.english || detail.title?.romaji || id,
+          anilistId: Number(anilistId),
+          malId: Number(detailMal),
+          subbed: Number.isFinite(detail.subbed) ? detail.subbed : null,
+          dubbed: Number.isFinite(detail.dubbed) ? detail.dubbed : null,
+          episodesCount: Number.isFinite(detail.episodes) ? detail.episodes : null,
+          matchType: "mal",
+          matchScore: 0.9,
+        };
+        cacheSet(cacheKey, data, SHOW_IDENTITY_TTL);
+        return data;
+      }
+    }
+  }
+
+  throw new Error(`No confirmed reanime match for AniList ${anilistId}`);
 }
-__name(jikanFetch2, "jikanFetch");
-async function getJikanEpisodes(malId, page) {
-  const res = await jikanFetch2(`${JIKAN3}/anime/${malId}/episodes?page=${page}`);
-  return res ?? { data: [], pagination: { last_visible_page: 1, has_next_page: false } };
+__name(resolveSeries, "resolveSeries");
+async function fetchEpisodesList(animeId, limit = 2000) {
+  const data = await fetch(`${BASE}/api/v1/anime/${animeId}/episodes?${new URLSearchParams({ limit })}`, { headers: H }).then(async (r) => {
+    const _raw = await r.text();
+    if (!r.ok) { const _e = new Error(`reanime episodes ${r.status}`); _e.rawBody = _raw; throw _e; }
+    try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
+  });
+  return Array.isArray(data?.data) ? data.data : [];
 }
-__name(getJikanEpisodes, "getJikanEpisodes");
+__name(fetchEpisodesList, "fetchEpisodesList");
+async function fetchAnizip(anilistId) {
+  return fetch(`${ANIZIP2}?anilist_id=${anilistId}`).then((r) => r.json()).catch(() => null);
+}
+__name(fetchAnizip, "fetchAnizip");
+function mergeEpisode(anilistId, ep, meta, audio) {
+  const number = ep.episode_number;
+  return {
+    id: `watch/reanime/${anilistId}/${audio}/reanime-${number}`,
+    number,
+    title: meta?.title?.en || meta?.title?.["x-jat"] || ep.title || `Episode ${number}`,
+    titleJapanese: meta?.title?.ja || ep.title_japanese || null,
+    titleRomanji: meta?.title?.["x-jat"] || ep.title_romanji || null,
+    image: meta?.image || ep.thumbnail || null,
+    airDate: meta?.airdate || ep.aired || null,
+    duration: meta?.runtime ? meta.runtime * 60 : (ep.duration ? ep.duration * 60 : null),
+    score: null,
+    filler: ep.is_filler ?? meta?.filler ?? false,
+    recap: ep.is_recap ?? false,
+    description: meta?.overview || ep.description || null,
+    audio
+  };
+}
+__name(mergeEpisode, "mergeEpisode");
 function json3(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
 }
 __name(json3, "json");
 async function handleEpisodes3(anilistId, url) {
-  const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1") || 1);
-  const { title: title2, malId, anizip } = await resolveIds(anilistId);
-
-  if (!malId) {
-    const anizipEps = anizip?.episodes ? Object.entries(anizip.episodes) : [];
-    if (!anizipEps.length) return json3({ error: `No MAL ID and no AniZip episodes for AniList ID ${anilistId}` }, 404);
-    const episodes = anizipEps.map(([epKey, meta]) => {
-      const epNum = parseInt(epKey);
-      return {
-        id: `watch/reanime/${anilistId}/sub/reanime-${epNum}`,
-        number: epNum,
-        title: meta.title?.en ?? meta.title?.["x-jat"] ?? `Episode ${epNum}`,
-        titleJapanese: meta.title?.ja ?? null,
-        titleRomanji: meta.title?.["x-jat"] ?? null,
-        image: meta.image ?? null,
-        airDate: meta.airdate ?? null,
-        duration: meta.runtime ? meta.runtime * 60 : null,
-        score: null,
-        filler: meta.filler ?? false,
-        recap: false,
-        description: meta.overview ?? null
-      };
-    }).sort((a, b) => a.number - b.number);
-    return json3({ anime: title2, anilistId: Number(anilistId), malId: null, episodes,
-      pagination: { currentPage: 1, lastPage: 1, hasNextPage: false } });
-  }
-
-  const jikan = await getJikanEpisodes(malId, page);
-  if (!jikan.data?.length) return json3({ error: `No episodes found on Jikan for MAL ID ${malId}` }, 404);
-  const episodes = jikan.data.map((ep) => {
-    const epNum = ep.mal_id;
-    const meta = anizip?.episodes?.[String(epNum)] ?? {};
-    return {
-      id: `watch/reanime/${anilistId}/sub/reanime-${epNum}`,
-      number: epNum,
-      title: ep.title ?? meta.title?.en ?? `Episode ${epNum}`,
-      titleJapanese: ep.title_japanese ?? null,
-      titleRomanji: ep.title_romanji ?? null,
-      image: meta.image ?? null,
-      airDate: ep.aired ?? meta.airDate ?? null,
-      duration: meta.runtime ? meta.runtime * 60 : null,
-      score: ep.score ?? null,
-      filler: ep.filler,
-      recap: ep.recap,
-      description: meta.overview ?? null
-    };
-  });
+  const series = await resolveSeries(anilistId);
+  const [reanimeEps, anizip] = await Promise.all([
+    fetchEpisodesList(series.animeId),
+    fetchAnizip(anilistId)
+  ]);
+  if (!reanimeEps.length) return json3({ error: `No reanime episodes found for AniList ID ${anilistId} (slug ${series.animeId})` }, 404);
+  const episodes = reanimeEps.map((ep) => {
+    const meta = anizip?.episodes?.[String(ep.episode_number)] ?? null;
+    return mergeEpisode(anilistId, ep, meta, "sub");
+  }).sort((a, b) => a.number - b.number);
   return json3({
-    anime: title2,
+    anime: series.title,
     anilistId: Number(anilistId),
-    malId,
+    malId: series.malId,
+    animeId: series.animeId,
     episodes,
-    pagination: {
-      currentPage: page,
-      lastPage: jikan.pagination.last_visible_page,
-      hasNextPage: jikan.pagination.has_next_page
-    }
+    pagination: { currentPage: 1, lastPage: 1, hasNextPage: false }
   });
 }
 __name(handleEpisodes3, "handleEpisodes");
 async function resolveStream3(anilistId, audio, ep) {
-  const { title: title2 } = await resolveIds(anilistId);
-  const slug = await findSlug(title2);
+  const series = await resolveSeries(anilistId);
+  const title2 = series.title;
+  const slug = series.animeId;
   const order = { "HD-2": 0, "HD-1": 1 };
   const byPrio = (arr) => arr.slice().sort((a, b) => (order[a.serverName] ?? 9) - (order[b.serverName] ?? 9));
   const [watchRes, flixRes] = await Promise.allSettled([
@@ -671,70 +694,23 @@ var reanime_default = {
   }
 };
 async function getEpisodes3(anilistId, ctx = {}) {
-  let title2, malId, anizip;
-  if (ctx.media && ctx.anizip !== void 0) {
-    title2 = ctx.media.title.english || ctx.media.title.romaji;
-    malId = ctx.media.idMal;
-    anizip = ctx.anizip;
-  } else {
-    ({ title: title2, malId, anizip } = await resolveIds(anilistId));
-  }
+  const series = await resolveSeries(anilistId, ctx);
+  const anizip = ctx.anizip !== void 0 ? ctx.anizip : await fetchAnizip(anilistId);
+  const reanimeEps = await fetchEpisodesList(series.animeId);
+  if (!reanimeEps.length) throw new Error(`No reanime episodes found for AniList ${anilistId} (slug ${series.animeId})`);
 
-  if (!malId) {
-    const anizipEps = anizip?.episodes ? Object.entries(anizip.episodes) : [];
-    if (!anizipEps.length) throw new Error(`No MAL ID and no AniZip episodes for AniList ${anilistId}`);
-    const sub = [], dub = [];
-    for (const [epKey, meta] of anizipEps) {
-      const epNum = parseInt(epKey);
-      const base = {
-        number: epNum,
-        title: meta.title?.en ?? meta.title?.["x-jat"] ?? `Episode ${epNum}`,
-        duration: meta.runtime ? meta.runtime * 60 : null,
-        filler: meta.filler ?? false,
-        uncensored: false,
-        description: meta.overview ?? null,
-        image: meta.image ?? null,
-        airDate: meta.airdate ?? null,
-      };
-      sub.push({ id: `watch/reanime/${anilistId}/sub/reanime-${epNum}`, ...base, audio: "sub" });
-      dub.push({ id: `watch/reanime/${anilistId}/dub/reanime-${epNum}`, ...base, audio: "dub" });
-    }
-    sub.sort((a, b) => a.number - b.number);
-    dub.sort((a, b) => a.number - b.number);
-    return { meta: { title: title2, malId: null }, episodes: { sub, dub } };
-  }
-
-  const allEps = ctx.jikanEps ?? await (async () => {
-    const first = await getJikanEpisodes(malId, 1);
-    const lastPage = first.pagination?.last_visible_page ?? 1;
-    let eps = [...first.data ?? []];
-    if (lastPage > 1) {
-      const rest = await Promise.all(
-        Array.from({ length: lastPage - 1 }, (_, i) => getJikanEpisodes(malId, i + 2))
-      );
-      for (const r of rest) eps = eps.concat(r.data ?? []);
-    }
-    return eps;
-  })();
+  const hasSub = series.subbed == null || series.subbed > 0;
+  const dubCount = series.dubbed ?? 0;
   const sub = [], dub = [];
-  for (const ep of allEps) {
-    const epNum = ep.mal_id;
-    const meta = anizip?.episodes?.[String(epNum)] ?? {};
-    const base = {
-      number: epNum,
-      title: ep.title ?? meta.title?.en ?? `Episode ${epNum}`,
-      duration: meta.runtime ? meta.runtime * 60 : null,
-      filler: ep.filler,
-      uncensored: false,
-      description: meta.overview ?? null,
-      image: meta.image ?? null,
-      airDate: ep.aired ?? meta.airDate ?? null
-    };
-    sub.push({ id: `watch/reanime/${anilistId}/sub/reanime-${epNum}`, ...base, audio: "sub" });
-    dub.push({ id: `watch/reanime/${anilistId}/dub/reanime-${epNum}`, ...base, audio: "dub" });
+  for (const ep of reanimeEps) {
+    const meta = anizip?.episodes?.[String(ep.episode_number)] ?? null;
+    if (hasSub) sub.push(mergeEpisode(anilistId, ep, meta, "sub"));
+    if (dubCount > 0 && ep.episode_number <= dubCount) dub.push(mergeEpisode(anilistId, ep, meta, "dub"));
   }
+  sub.sort((a, b) => a.number - b.number);
+  dub.sort((a, b) => a.number - b.number);
   return {
-    meta: { title: title2, malId },
+    meta: { title: series.title, malId: series.malId, animeId: series.animeId },
     episodes: { sub, dub }
   };
 }
