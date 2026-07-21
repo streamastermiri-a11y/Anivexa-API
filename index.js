@@ -11,6 +11,7 @@ import animenosubHandler           from "./providers/animenosub.js";
 import anizoneHandler              from "./providers/anizone.js";
 import anibdHandler                from "./providers/anibd.js";
 import senshiHandler               from "./providers/senshi.js";
+import kaaHandler                  from "./providers/kickassanime.js";
 import { getEpisodesResponse, getFilteredEpisodesResponse } from "./core/episode-cache.js";
 import { resolveProviders }         from "./core/episode-strategy.js";
 import { getAsync, setAsync, isFresh, mapTTL, WATCH_TTL, _CACHE_ENABLED } from "./core/smartcache.js";
@@ -232,6 +233,15 @@ export default {
       );
     }
 
+    m = path.match(/^\/watch\/kaa\/(\d+)\/(sub|dub)\/kaa-(\d+)\/?$/);
+    if (m) {
+      const [, id, audio, ep] = m;
+      return cachedWatch(
+        `watch:kaa:${id}:${audio}:${ep}`,
+        () => kaaHandler.fetch(request)
+      );
+    }
+
     m = path.match(/^\/stream\/2dhive\/(\d+)\/(sub|dub)\/(\d+)\/?$/);
     if (m) return dhiveHandler.fetch(request);
 
@@ -253,6 +263,7 @@ export default {
         "anizone",
         "anibd",
         "senshi",
+        "kaa",
       ],
       routes: [
         "/map/:anilistId",
@@ -272,6 +283,7 @@ export default {
         "/watch/anizone/:id/sub|dub/anizone-:ep",
         "/watch/anibd/:id/sub|dub/anibd-:ep",
         "/watch/senshi/:id/sub|dub/senshi-:ep",
+        "/watch/kaa/:id/sub|dub/kaa-:ep",
       ],
     });
   },

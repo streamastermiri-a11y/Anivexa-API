@@ -13,6 +13,7 @@ import { getEpisodes as animenosubEpisodes } from "../providers/animenosub.js";
 import { getEpisodes as anizoneEpisodes } from "../providers/anizone.js";
 import { getEpisodes as anibdEpisodes   } from "../providers/anibd.js";
 import { getEpisodes as senshiEpisodes } from "../providers/senshi.js";
+import { getEpisodes as kaaEpisodes    } from "../providers/kickassanime.js";
 const JIKAN = "https://api.jikan.moe/v4";
 const UA    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -171,6 +172,7 @@ const PROVIDER_ALIASES = {
   anizone: "anizone",
   anibd:  "anibd",
   senshi: "senshi",
+  kaa:    "kaa",
 };
 
 export function resolveProviders(rawNames) {
@@ -197,6 +199,7 @@ function providerFns(anilistId, status, ctx) {
     anizone: () => withCache(`epv:anizone:${anilistId}`, status, () => anizoneEpisodes(anilistId, ctx)),
     anibd:  () => withCache(`epv:anibd:${anilistId}`,   status, () => anibdEpisodes(anilistId, ctx)),
     senshi: () => withCache(`epv:senshi:${anilistId}`,  status, () => senshiEpisodes(anilistId, ctx)),
+    kaa:    () => withCache(`epv:kaa:${anilistId}`,     status, () => kaaEpisodes(anilistId, ctx)),
   };
 }
 
@@ -243,6 +246,7 @@ export async function buildEpisodesWithCache(anilistId, media, anizip) {
     safe("anizone",    () => withCache(`epv:anizone:${anilistId}`,    status, () => anizoneEpisodes(anilistId, ctx))),
     safe("anibd",      () => withCache(`epv:anibd:${anilistId}`,      status, () => anibdEpisodes(anilistId, ctx))),
     safe("senshi",     () => withCache(`epv:senshi:${anilistId}`,     status, () => senshiEpisodes(anilistId, ctx))),
+    safe("kaa",        () => withCache(`epv:kaa:${anilistId}`,        status, () => kaaEpisodes(anilistId, ctx))),
   ]);
 
   return {
@@ -257,5 +261,6 @@ export async function buildEpisodesWithCache(anilistId, media, anizip) {
     anizone:     anizone.ok     ? anizone.data     : { error: anizone.error,     stack: anizone.stack },
     anibd:       anibd.ok       ? anibd.data       : { error: anibd.error,       stack: anibd.stack },
     senshi:      senshi.ok      ? senshi.data      : { error: senshi.error,      stack: senshi.stack },
+    kaa:         kaa.ok         ? kaa.data         : { error: kaa.error,         stack: kaa.stack },
   };
 }
