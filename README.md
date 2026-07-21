@@ -1,5 +1,9 @@
 <div align="center">
 
+
+<img src="docs/logo.svg" width="80" height="80"/>
+
+
 # Anivexa API 2.2
 
 **Anime streaming aggregator API — one endpoint, all your sources.**
