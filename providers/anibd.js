@@ -31,80 +31,112 @@ async function fetchPlayerLinks(providerLink) {
   return Array.isArray(data) ? data : [];
 }
 
-function absolutizeUrl(raw, origin) {
-  if (!raw) return null;
+function extractVideoUrl(html, origin) {
+  const m = html.match(/videoUrl\s*:\s*"([^"]+)"/);
+  if (!m) return null;
+  const raw = m[1];
   if (/^https?:\/\//i.test(raw)) return raw;
   return `${origin}${raw.startsWith("/") ? "" : "/"}${raw}`;
 }
 
-function extractVideoUrl(html, origin) {
-  const m = html.match(/videoUrl\s*:\s*"([^"]+)"/);
-  if (!m) return null;
-  return absolutizeUrl(m[1], origin);
-}
-
-// AniBD's own site plays subtitles fine, but this scraper only ever pulled
-// `videoUrl` out of the player script and discarded everything else on the
-// page — including whatever subtitle/track info sits right next to it, so
-// no `subtitles` field was ever sent back to the client.
-// Different AniBD mirrors phrase the track info differently, so we try a
-// few known shapes here and merge whatever matches instead of betting on
-// just one. If the mirror uses a shape none of these catch, this returns
-// [] (same silent-no-subs behaviour as before) rather than throwing.
-function extractSubtitles(html, origin) {
-  const subs = [];
+// Scan player HTML for any directly-embedded VTT subtitle URLs.
+// Covers subtitleUrl, tracks[], and captions[] patterns as fallbacks.
+function extractVttFromHtml(html) {
   const seen = new Set();
-
-  const add = (rawUrl, label) => {
-    const url = absolutizeUrl(rawUrl, origin);
+  const results = [];
+  function add(url, label) {
     if (!url || seen.has(url)) return;
     seen.add(url);
-    const ext = url.match(/\.(vtt|srt|ass)(?:\?|#|$)/i)?.[1]?.toLowerCase() || "vtt";
-    subs.push({ url, label: label || "", srclang: "", format: ext, default: subs.length === 0 });
-  };
-
-  // Shape 1: native <track kind="subtitles"|"captions" src="..." label="..."> tags
-  const trackRe = /<track\b([^>]*)>/gi;
-  let t;
-  while ((t = trackRe.exec(html)) !== null) {
-    const attrs = t[1];
-    const kind = attrs.match(/kind=["']?([^"'\s>]+)/i)?.[1] ?? "";
-    if (kind && !/^(subtitles|captions)$/i.test(kind)) continue;
-    const src = attrs.match(/src=["']([^"']+)["']/i)?.[1] ?? attrs.match(/src=([^\s"'>]+)/i)?.[1];
-    if (!src) continue;
-    const label = attrs.match(/label=["']([^"']*)["']/i)?.[1] ?? "";
-    add(src, label);
+    results.push({ url, label: label || "English" });
   }
-
-  // Shape 2: a bare key next to videoUrl, e.g. subUrl / subtitle / subtitleUrl / captionUrl: "..."
-  const kvRe = /\b(?:subUrl|subsUrl|subtitleUrl|subtitle|captionUrl|captions?)\s*:\s*"([^"]+)"/gi;
-  let kv;
-  while ((kv = kvRe.exec(html)) !== null) add(kv[1], "");
-
-  // Shape 3: jwplayer-style tracks: [ {file:"...", label:"...", kind:"captions"}, ... ]
-  const tracksMatch = html.match(/tracks\s*:\s*\[([\s\S]*?)\]/i);
-  if (tracksMatch) {
-    const itemRe = /\{[^{}]*\}/g;
-    let im;
-    while ((im = itemRe.exec(tracksMatch[1])) !== null) {
-      const item = im[0];
-      if (!/kind\s*:\s*["'](captions|subtitles)["']/i.test(item)) continue;
-      const file = item.match(/file\s*:\s*["']([^"']+)["']/i)?.[1];
-      const label = item.match(/label\s*:\s*["']([^"']*)["']/i)?.[1] ?? "";
-      if (file) add(file, label);
+  const single = html.match(/subtitleUrl\s*:\s*["']([^"']+\.vtt[^"']*?)["']/i);
+  if (single) add(single[1], "English");
+  const tracksBlock = html.match(/tracks\s*:\s*\[([^\]]+)\]/);
+  if (tracksBlock) {
+    for (const entry of tracksBlock[1].matchAll(/\{[^}]+\}/g)) {
+      const fileM  = entry[0].match(/file\s*:\s*["']([^"']+)["']/);
+      const labelM = entry[0].match(/label\s*:\s*["']([^"']+)["']/);
+      const kindM  = entry[0].match(/kind\s*:\s*["']([^"']+)["']/);
+      const kind   = kindM ? kindM[1].toLowerCase() : "";
+      if (kind && kind !== "captions" && kind !== "subtitles") continue;
+      if (fileM) add(fileM[1], labelM ? labelM[1] : "English");
     }
   }
+  const captionsBlock = html.match(/captions\s*:\s*\[([^\]]+)\]/);
+  if (captionsBlock) {
+    for (const entry of captionsBlock[1].matchAll(/\{[^}]+\}/g)) {
+      const urlM   = entry[0].match(/url\s*:\s*["']([^"']+)["']/);
+      const labelM = entry[0].match(/label\s*:\s*["']([^"']+)["']/);
+      if (urlM) add(urlM[1], labelM ? labelM[1] : "English");
+    }
+  }
+  return results;
+}
 
-  return subs;
+// Extract the playsub.php path from the player page source.
+// anidb.app player JS calls playsub.php to get the subtitle URL at runtime.
+// Example patterns seen in player source:
+//   fetch('playsub.php?id=ani10&s=SLUG')
+//   $.get("playsub.php?id=ani10&s=SLUG")
+//   url: 'playsub.php?id=ani10&s=SLUG'
+function extractPlaysubPath(html) {
+  const m = html.match(/['"](\/?playsub\.php[^'"]+)['"]/);
+  return m ? m[1] : null;
+}
+
+// Fetch playsub.php and parse the VTT URL from its response.
+// Response shapes seen: { "sub": "https://.../sub.vtt" }
+// or plain text / HTML containing a .vtt URL.
+async function fetchSubtitleFromPlaysub(playsubUrl, referer) {
+  try {
+    const res = await fetch(playsubUrl, {
+      headers: {
+        "User-Agent": UA,
+        "Accept": "application/json, text/plain, */*",
+        "Referer": referer,
+        "X-Requested-With": "XMLHttpRequest",
+      },
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text);
+      const vtt = data.sub || data.url || data.file || data.vtt
+        || (Array.isArray(data) && data[0] && (data[0].sub || data[0].url || data[0].file));
+      if (vtt && typeof vtt === "string" && vtt.includes(".vtt")) return vtt;
+    } catch {}
+    // Fallback: scan raw response for any .vtt URL
+    const m = text.match(/https?:\/\/[^\s"'<>]+\.vtt[^\s"'<>]*/);
+    return m ? m[0] : null;
+  } catch {
+    return null;
+  }
 }
 
 async function resolvePlayerStream(playerLink) {
   const origin = new URL(playerLink).origin;
   const referer = `${origin}/`;
   const html = await fetchHtml(playerLink, referer);
+
   const hls = extractVideoUrl(html, origin);
   if (!hls) throw new Error(`anibd: no videoUrl found at ${playerLink}`);
-  const subtitles = extractSubtitles(html, origin);
+
+  // Primary: fetch playsub.php which is where anidb.app stores the VTT URL
+  let subtitles = [];
+  const playsubPath = extractPlaysubPath(html);
+  if (playsubPath) {
+    const playsubUrl = /^https?:\/\//i.test(playsubPath)
+      ? playsubPath
+      : `${origin}/${playsubPath.replace(/^\//, "")}`;
+    const vttUrl = await fetchSubtitleFromPlaysub(playsubUrl, referer);
+    if (vttUrl) subtitles = [{ url: vttUrl, label: "English" }];
+  }
+
+  // Fallback: scan player page HTML for embedded VTT references
+  if (!subtitles.length) {
+    subtitles = extractVttFromHtml(html);
+  }
+
   return { hls, referer, subtitles };
 }
 
@@ -183,6 +215,9 @@ async function handleWatch(anilistId, audio, epNum) {
   const streams = [];
   let activeAssigned = false;
 
+  const allSubtitles = [];
+  const seenSubUrls = new Set();
+
   for (const entry of servers) {
     if (!entry?.link) continue;
     try {
@@ -192,10 +227,22 @@ async function handleWatch(anilistId, audio, epNum) {
         type: "hls",
         server: entry.server ?? "AniBD",
         referer,
-        subtitles,
+        subtitles: subtitles || [],
         priority: activeAssigned ? 4 : 5,
         isActive: !activeAssigned,
       });
+      // Collect unique subtitle tracks across all servers
+      for (const s of (subtitles || [])) {
+        if (s.url && !seenSubUrls.has(s.url)) {
+          seenSubUrls.add(s.url);
+          allSubtitles.push({
+            url: s.url,
+            label: s.label || "English",
+            format: "vtt",
+            default: allSubtitles.length === 0,
+          });
+        }
+      }
       activeAssigned = true;
     } catch {
       streams.push({
@@ -203,13 +250,14 @@ async function handleWatch(anilistId, audio, epNum) {
         type: "embed",
         server: entry.server ?? "AniBD",
         referer: `${new URL(entry.link).origin}/`,
+        subtitles: [],
         priority: 1,
         isActive: false,
       });
     }
   }
 
-  return json({ anilistId: Number(anilistId), episode: Number(epNum), audio, streams });
+  return json({ anilistId: Number(anilistId), episode: Number(epNum), audio, streams, subtitles: allSubtitles });
 }
 
 export default {
