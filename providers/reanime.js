@@ -1,6 +1,6 @@
 const __name = (fn, _) => fn;
 import { getMedia } from '../core/anilist.js';
-import { buildTitles } from '../core/new-provider-utils.js';
+import { buildTitles, diceCoeff, norm } from '../core/new-provider-utils.js';
 import { get as cacheGet, set as cacheSet, isFresh as cacheIsFresh, SHOW_IDENTITY_TTL } from '../core/smartcache.js';
 
 var BASE = "https://reanime.to";
@@ -470,10 +470,17 @@ async function resolveSeries(anilistId, ctx = {}) {
     }
   }
 
-  // Fallback: fetch detail pages only for candidates that had no AniList CDN cover
-  // (TMDB / MAL covers don't embed an ID we can read directly).
+  // Fetch detail pages for candidates that had no AniList CDN cover.
+  // TMDB / MAL covers don't embed an ID we can read directly, so we need the
+  // detail page to check anilist_id / mal_id. We also fetch candidates whose
+  // CDN cover *did* have an ID but didn't match — that way the anilist_id field
+  // in the detail page can still rescue mismatched cover-image IDs.
   const needsDetail = [...candidates.keys()].filter(
-    (id) => extractAnilistIdFromCover(candidates.get(id)?.cover_image) === null
+    (id) => {
+      const coverId = extractAnilistIdFromCover(candidates.get(id)?.cover_image);
+      // Skip only if cover image already confirmed this IS the right show
+      return !(coverId && coverId === Number(anilistId));
+    }
   );
   const details = await Promise.all(
     needsDetail.map(async (id) => ({ id, detail: await fetchAnimeDetail(id).catch(() => null) }))
@@ -516,6 +523,66 @@ async function resolveSeries(anilistId, ctx = {}) {
         return data;
       }
     }
+  }
+
+  // Fallback: title-similarity match using dice coefficient.
+  // When AniList CDN covers use TMDB/MAL images (no bx-ID) and detail pages
+  // don't carry anilist_id/mal_id yet, this catches the right entry by name.
+  const titles = buildTitles(media, ctx.anizip);
+  let bestScore = 0;
+  let bestCandidate = null;
+  for (const [id, r] of candidates) {
+    const candidateTitles = [
+      r.title?.english,
+      r.title?.romaji,
+      r.title?.native,
+    ].filter(Boolean);
+    for (const cTitle of candidateTitles) {
+      for (const qTitle of titles.slice(0, 3)) {
+        const score = diceCoeff(qTitle, cTitle);
+        if (score > bestScore) {
+          bestScore = score;
+          bestCandidate = { id, r };
+        }
+      }
+    }
+  }
+  // Also check detail page titles for candidates that needed detail fetches
+  for (const { id, detail } of details) {
+    if (!detail) continue;
+    const candidateTitles = [
+      detail.title?.english,
+      detail.title?.romaji,
+      detail.title?.native,
+    ].filter(Boolean);
+    for (const cTitle of candidateTitles) {
+      for (const qTitle of titles.slice(0, 3)) {
+        const score = diceCoeff(qTitle, cTitle);
+        if (score > bestScore) {
+          bestScore = score;
+          const r = candidates.get(id) ?? {};
+          bestCandidate = { id, r, detail };
+        }
+      }
+    }
+  }
+
+  if (bestCandidate && bestScore >= 0.75) {
+    const { id, r, detail } = bestCandidate;
+    const src = detail ?? r;
+    const data = {
+      animeId: id,
+      title: src.title?.english || src.title?.romaji || r.title?.english || id,
+      anilistId: Number(anilistId),
+      malId: detail?.mal_id || null,
+      subbed: Number.isFinite(src.subbed) ? src.subbed : null,
+      dubbed: Number.isFinite(src.dubbed) ? src.dubbed : null,
+      episodesCount: Number.isFinite(src.episodes) ? src.episodes : null,
+      matchType: "title_similarity",
+      matchScore: bestScore,
+    };
+    cacheSet(cacheKey, data, SHOW_IDENTITY_TTL);
+    return data;
   }
 
   throw new Error(`No confirmed reanime match for AniList ${anilistId}`);
