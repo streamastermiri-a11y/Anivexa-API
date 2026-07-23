@@ -2,7 +2,6 @@ import { getMedia } from "../core/anilist.js";
 import {
   buildTitles,
   decodeEntities,
-  diceCoeff,
   episodeMeta,
   expectedCount,
   fetchHtml,
@@ -10,19 +9,15 @@ import {
   json,
   norm,
   selectSeries,
+  titleScore,
 } from "../core/new-provider-utils.js";
 import { get, set, isFresh, SHOW_IDENTITY_TTL } from "../core/smartcache.js";
 
 const BASE = "https://anizone.to";
 
+// Use the shared titleScore from utils (includes numeric-suffix penalty, movie penalty, etc.)
 function scoreCandidate(query, candidate, slug) {
-  const base = Math.max(diceCoeff(query, candidate), diceCoeff(query, slug.replace(/-/g, " ")));
-  const isMovieQuery = /\b(movie|film|the movie)\b/i.test(query);
-  const isMovieMatch = /\b(movie|film)\b/i.test(candidate) || /movie|film/.test(slug);
-  if (isMovieQuery && !isMovieMatch) return base * 0.4;
-  const qLen = norm(query).length;
-  const sLen = norm(slug.replace(/-/g, " ")).length;
-  return sLen > qLen * 1.6 + 4 ? base * 0.8 : base;
+  return titleScore(query, candidate, slug);
 }
 
 function buildSearchQueries(title) {
@@ -40,7 +35,7 @@ function buildSearchQueries(title) {
   return [...queries].filter((q) => q.length >= 3);
 }
 
-async function findCandidates(titles, searchFn, n = 6) {
+async function findCandidates(titles, searchFn, n = 8) {
   const allCandidates = new Map();
   const searchQueries = new Set();
   for (const title of titles.slice(0, 4)) {
@@ -55,8 +50,10 @@ async function findCandidates(titles, searchFn, n = 6) {
   const scored = [];
   for (const [slug, text] of allCandidates) {
     let best = 0;
-    for (const title of titles.slice(0, 2)) best = Math.max(best, scoreCandidate(title, text, slug));
-    if (best >= 0.5) scored.push({ slug, title: text, score: best });
+    // Score against all titles (not just first 2) for better coverage
+    for (const title of titles.slice(0, 4)) best = Math.max(best, scoreCandidate(title, text, slug));
+    // Lower threshold from 0.5 → 0.4 so near-matches aren't dropped before selectSeries
+    if (best >= 0.4) scored.push({ slug, title: text, score: best });
   }
   return scored.sort((a, b) => b.score - a.score).slice(0, n);
 }
@@ -188,8 +185,9 @@ async function resolveSeries(anilistId, ctx = {}) {
   let candidates = await findCandidates(titles, searchFn);
 
   // AniZone uses "(YEAR)" suffixes for sequel seasons instead of slug numbers.
-  // When seasonYear is available and any candidate carries a year, re-score so the
-  // matching year wins decisively and wrong-year / year-less entries fall below threshold.
+  // When seasonYear is available and any candidate carries a year suffix, boost
+  // matching-year entries but only lightly penalise year-less ones (they may be
+  // the correct base entry that simply has no suffix on AniZone).
   const seasonYear = media?.seasonYear;
   if (seasonYear && candidates.some(c => /\(\d{4}\)/.test(c.title))) {
     candidates = candidates.map(c => {
@@ -197,17 +195,21 @@ async function resolveSeries(anilistId, ctx = {}) {
       if (m) {
         return parseInt(m[1]) === seasonYear
           ? { ...c, score: Math.min(1, c.score * 1.3) }
-          : { ...c, score: c.score * 0.5 };
+          : { ...c, score: c.score * 0.55 };  // wrong year — penalise but don't wipe
       }
-      // No year suffix = base/S1 entry; penalise when sequels are expected
-      return { ...c, score: c.score * 0.65 };
+      // No year suffix: could be the correct S1/base entry; only mild penalty
+      return { ...c, score: c.score * 0.85 };
     }).sort((a, b) => b.score - a.score);
   }
 
   const expected = expectedCount(media, ctx.anizip, ctx.jikanEps);
   const offset = await getPrequelOffset(anilistId).catch(() => 0);
-  const selected = await selectSeries(candidates, scrapeSeries, expected, media?.status, offset);
-  if (!selected) throw new Error(`AniZone match not found for AniList ${anilistId}`);
+  // Lower minScore from default 0.65 → 0.55 to tolerate imperfect title matches
+  const selected = await selectSeries(candidates, scrapeSeries, expected, media?.status, offset, { minScore: 0.55 });
+  if (!selected) {
+    const topSlugs = candidates.slice(0, 3).map(c => `${c.slug}(${c.score.toFixed(2)})`).join(", ");
+    throw new Error(`AniZone match not found for AniList ${anilistId}. Top candidates: [${topSlugs || "none"}]`);
+  }
   const data = { slug: selected.slug, title: selected.title, mode: selected.mode, offset, score: selected.score };
   set(cacheKey, data, SHOW_IDENTITY_TTL);
   return data;
