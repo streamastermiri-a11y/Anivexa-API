@@ -39,6 +39,7 @@ It's the backbone powering **[Anivexa](https://github.com/walterwhite-69/Anivexa
 | **2dhive** | ✅ Active | Uses MAL ID internally; AniList ID used everywhere else |
 | **Anibd** | ✅ Active | Uses Anilist ID internally; AniList ID used everywhere else |
 | **Kickassanime** | ✅ Active | Fuzzy search, medium library |
+| **AnimeDunya** | ✅ Active | HLS + subtitles, sub-only, MAL ID backed |
 
 ---
 

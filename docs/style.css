@@ -40,8 +40,6 @@ body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* ── BACKGROUND ORBS (GPU-only: transform + opacity) ── */
-
 .bg-orbs {
   position: fixed;
   inset: 0;
@@ -54,6 +52,7 @@ a:hover { text-decoration: underline; }
   position: absolute;
   border-radius: 50%;
   filter: blur(90px);
+  will-change: transform;
 }
 
 .bg-orb-1 {
@@ -93,8 +92,6 @@ a:hover { text-decoration: underline; }
   65%     { transform: translate(-15px,20px); }
 }
 
-/* ── LAYOUT ── */
-
 .layout {
   display: flex;
   min-height: 100vh;
@@ -102,16 +99,14 @@ a:hover { text-decoration: underline; }
   z-index: 1;
 }
 
-/* ── SIDEBAR ── */
-
 .sidebar {
   position: fixed;
   top: 0; left: 0;
   width: var(--sidebar-w);
   height: 100vh;
-  background: rgba(13,13,18,.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(13,13,18,.92);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -250,8 +245,6 @@ a:hover { text-decoration: underline; }
   flex-shrink: 0;
 }
 
-/* ── MAIN ── */
-
 .main {
   margin-left: var(--sidebar-w);
   min-width: 0;
@@ -259,15 +252,14 @@ a:hover { text-decoration: underline; }
   padding: 64px max(40px, calc((100% - 820px) / 2));
 }
 
-/* ── HEADER MOBILE ── */
-
 .topbar {
   display: none;
   position: fixed;
   top: 0; left: 0; right: 0;
   height: var(--header-h);
-  background: rgba(13,13,18,.9);
-  backdrop-filter: blur(20px);
+  background: rgba(9,9,13,.95);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid var(--border);
   align-items: center;
   padding: 0 16px;
@@ -290,6 +282,12 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  transition: border-color .2s, background .2s;
+}
+
+.menu-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
 }
 
 .menu-btn span {
@@ -297,10 +295,12 @@ a:hover { text-decoration: underline; }
   width: 16px; height: 2px;
   background: var(--text);
   border-radius: 2px;
-  transition: transform .2s, opacity .2s;
+  transition: transform .3s cubic-bezier(.22,1,.36,1), opacity .2s;
 }
 
-/* ── SECTION ENTRANCE ANIMATIONS ── */
+.menu-btn.active span:nth-child(1) { transform: rotate(45deg) translate(4px, 4px); }
+.menu-btn.active span:nth-child(2) { opacity: 0; }
+.menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(4px, -4px); }
 
 .section {
   margin-bottom: 80px;
@@ -316,8 +316,6 @@ a:hover { text-decoration: underline; }
 }
 
 .section-hero { margin-bottom: 72px; }
-
-/* ── HERO ── */
 
 .hero-logo {
   width: 56px; height: 56px;
@@ -374,8 +372,6 @@ h3 {
 
 p { color: var(--muted); margin-bottom: 16px; }
 p:last-child { margin-bottom: 0; }
-
-/* ── ENDPOINT CARD ── */
 
 .endpoint {
   background: var(--surface);
@@ -466,8 +462,6 @@ p:last-child { margin-bottom: 0; }
   margin-bottom: 14px;
 }
 
-/* ── PARAMS TABLE ── */
-
 .params-table {
   width: 100%;
   border-collapse: collapse;
@@ -509,8 +503,6 @@ p:last-child { margin-bottom: 0; }
 }
 
 .param-desc { color: var(--muted); }
-
-/* ── CODE BLOCK ── */
 
 .code-label {
   font-size: 11px;
@@ -555,8 +547,6 @@ code {
 .p { color: #555568; }
 .b { color: #fb923c; }
 
-/* ── COPY BUTTON ── */
-
 .copy-btn {
   position: absolute;
   top: 10px; right: 12px;
@@ -569,7 +559,6 @@ code {
   border-radius: 5px;
   padding: 3px 9px;
   cursor: pointer;
-  transition: color .15s, background .15s, border-color .15s;
   opacity: 0;
   transition: opacity .2s, color .15s, background .15s;
   z-index: 2;
@@ -589,8 +578,6 @@ pre:hover .copy-btn { opacity: 1; }
   background: var(--green-dim);
   opacity: 1;
 }
-
-/* ── PROVIDER GRID ── */
 
 .provider-grid {
   display: grid;
@@ -628,8 +615,6 @@ pre:hover .copy-btn { opacity: 1; }
   color: var(--muted);
 }
 
-/* ── CALLOUT ── */
-
 .callout {
   display: flex;
   gap: 12px;
@@ -655,8 +640,6 @@ pre:hover .copy-btn { opacity: 1; }
 
 .callout-icon { flex-shrink: 0; font-size: 15px; }
 
-/* ── DIVIDER ── */
-
 .divider {
   border: none;
   height: 1px;
@@ -664,22 +647,17 @@ pre:hover .copy-btn { opacity: 1; }
   margin: 56px 0;
 }
 
-/* ── SIDEBAR OVERLAY ── */
-
 .overlay {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.7);
+  background: transparent;
   z-index: 90;
-  backdrop-filter: blur(4px);
 }
 
-/* ── STAGGER HELPER ── */
+.overlay.open { display: block; }
 
 .provider-grid .provider-card { transition-delay: calc(var(--i, 0) * 40ms); }
-
-/* ── RESPONSIVE ── */
 
 @media (max-width: 768px) {
   :root { --sidebar-w: 280px; }
@@ -689,14 +667,17 @@ pre:hover .copy-btn { opacity: 1; }
   .sidebar {
     transform: translateX(-100%);
     transition: transform .28s cubic-bezier(.4,0,.2,1);
+    background: var(--sidebar);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 
   .sidebar.open {
     transform: translateX(0);
-    box-shadow: 32px 0 64px rgba(0,0,0,.6);
+    box-shadow: 4px 0 24px rgba(0,0,0,.5);
   }
-
-  .overlay.open { display: block; }
 
   .main {
     margin-left: 0;
@@ -706,13 +687,14 @@ pre:hover .copy-btn { opacity: 1; }
   h1 { font-size: 26px; }
   h2 { font-size: 17px; }
   .bg-orb-2, .bg-orb-3 { display: none; }
+
+  .endpoint { transform: none !important; }
+  .provider-card { transform: none !important; }
 }
 
 @media (min-width: 769px) and (max-width: 1100px) {
   .main { padding: 52px 36px; }
 }
-
-/* ── CUSTOM CURSOR ── */
 
 body, a, button, label, [role="button"] { cursor: none; }
 
@@ -765,10 +747,7 @@ body, a, button, label, [role="button"] { cursor: none; }
   background: rgba(129,140,248,.12);
 }
 
-/* Restore cursor on inputs & textareas */
 input, textarea, select { cursor: text; }
-
-/* ── REDUCED MOTION ── */
 
 @media (prefers-reduced-motion: reduce) {
   .section { opacity: 1; transform: none; transition: none; }
