@@ -71,6 +71,15 @@ export default {
     const url  = new URL(request.url);
     const path = url.pathname;
 
+    // Custom addition — see health/README.md. Not part of the upstream
+    // repo; safe to keep across `git pull`/branch syncs. Everything
+    // this needs lives in health/, so this is the only line touching
+    // the routing logic below.
+    if (path.startsWith("/health/")) {
+      const { default: healthHandler } = await import("./health/check.js");
+      return healthHandler(request);
+    }
+
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
