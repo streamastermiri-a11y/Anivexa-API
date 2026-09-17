@@ -35,11 +35,11 @@ const PROVIDERS = [
 // actually fine, it just doesn't have THIS show" false negatives.
 // Override via env var if a different test case fits your providers
 // better.
-const TEST_ANILIST_ID = process.env.HEALTHCHECK_ANILIST_ID || "21";
+const TEST_ANILIST_ID = process.env.HEALTHCHECK_ANILIST_ID || "16498";
 const TEST_EPISODE = process.env.HEALTHCHECK_EPISODE || "1";
 
 const CACHE_KEY = "health:status";
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PER_PROVIDER_TIMEOUT_MS = 12000;
 
 // Same-instance fallback so repeated calls stay fast even when
