@@ -162,6 +162,12 @@ function streamRank(stream) {
   return 2;
 }
 
+function subtitleTypeFromServerType(typeName) {
+  if (typeName === "hsub") return "hardsub";
+  if (typeName === "sub") return "softsub";
+  return null;
+}
+
 async function extractEmbedSource(embedUrl) {
   try {
     return await extractMegaPlayDetails(embedUrl, { userAgent: UA, referer: SPOOF_REF });
@@ -331,8 +337,8 @@ async function handleWatch(anilistId, audio, epNum, ctx = {}) {
 
       if (typeName === "dl" || name.toLowerCase().includes("download") || name.toLowerCase().includes("kiwi")) {
         downloadItems.push({ linkId, name });
-      } else if (typeName === audio) {
-        serverItems.push({ linkId, name });
+      } else if (typeName === audio || (audio === "sub" && typeName === "hsub")) {
+        serverItems.push({ linkId, name, serverType: typeName, subtitleType: subtitleTypeFromServerType(typeName) });
       }
     }
   }
@@ -342,7 +348,12 @@ async function handleWatch(anilistId, audio, epNum, ctx = {}) {
       if (sKey === "status") continue;
       const cleanName = sKey.replace(/[-_]+$/, "").trim();
       if (sObj?.[audio]?.url) {
-        serverItems.push({ linkId: sObj[audio].url, name: cleanName });
+        serverItems.push({
+          linkId: sObj[audio].url,
+          name: cleanName,
+          serverType: audio,
+          subtitleType: subtitleTypeFromServerType(audio)
+        });
       }
       if (sObj?.[audio]?.download) {
         for (const [dLabel, dUrl] of Object.entries(sObj[audio].download)) {
@@ -363,8 +374,9 @@ async function handleWatch(anilistId, audio, epNum, ctx = {}) {
   const dlSeen = new Set();
 
   for (const item of serverItems) {
-    if (serverSeen.has(item.name)) continue;
-    serverSeen.add(item.name);
+    const serverKey = `${item.name}:${item.subtitleType || item.serverType || audio}`;
+    if (serverSeen.has(serverKey)) continue;
+    serverSeen.add(serverKey);
 
     const resolved = item.linkId.startsWith("http")
       ? { result: { url: item.linkId } }
@@ -437,6 +449,7 @@ async function handleWatch(anilistId, audio, epNum, ctx = {}) {
           priority: streams.length ? 4 : 5,
           isActive: streams.length === 0
         };
+        if (item.subtitleType) streamObj.subtitleType = item.subtitleType;
         if (source.variant) streamObj.variant = source.variant;
         if (serverIntro.start || serverIntro.end) streamObj.intro = serverIntro;
         if (serverOutro.start || serverOutro.end) streamObj.outro = serverOutro;
@@ -450,6 +463,7 @@ async function handleWatch(anilistId, audio, epNum, ctx = {}) {
         priority: 4,
         isActive: false
       });
+      if (item.subtitleType) streams[streams.length - 1].subtitleType = item.subtitleType;
     } else {
       const streamObj = {
         url: embedUrl,
@@ -459,6 +473,7 @@ async function handleWatch(anilistId, audio, epNum, ctx = {}) {
         priority: 4,
         isActive: streams.length === 0
       };
+      if (item.subtitleType) streamObj.subtitleType = item.subtitleType;
       if (serverIntro.start || serverIntro.end) streamObj.intro = serverIntro;
       if (serverOutro.start || serverOutro.end) streamObj.outro = serverOutro;
       streams.push(streamObj);
