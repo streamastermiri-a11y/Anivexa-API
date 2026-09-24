@@ -8,7 +8,6 @@ import { getEpisodes as anikotoEpisodes } from "../providers/anikoto.js";
 import { getEpisodes as animeggEpisodes } from "../providers/animegg.js";
 import { getEpisodes as aninekoEpisodes } from "../providers/anineko.js";
 import { getEpisodes as anidbappEpisodes } from "../providers/anidbapp.js";
-import { getEpisodes as dhiveEpisodes } from "../providers/2dhive.js";
 import { getEpisodes as animenosubEpisodes } from "../providers/animenosub.js";
 import { getEpisodes as anizoneEpisodes } from "../providers/anizone.js";
 import { getEpisodes as aniwavesEpisodes } from "../providers/aniwaves.js";
@@ -83,7 +82,6 @@ const PROVIDER_ALIASES = {
   animegg:  "animegg",
   anineko:  "anineko",
   anidbapp: "anidbapp",
-  "2dhive": "2dhive",
   animenosub: "animenosub",
   anizone: "anizone",
   aniwaves: "aniwaves",
@@ -113,7 +111,6 @@ function providerFns(anilistId, status, ctx) {
     animegg:  () => withCache(`epv:animegg:${anilistId}`, status, () => animeggEpisodes(anilistId, ctx)),
     anineko:  () => withCache(`epv:anineko:${anilistId}`, status, () => aninekoEpisodes(anilistId, ctx)),
     anidbapp: () => withCache(`epv:anidbapp:${anilistId}`, status, () => anidbappEpisodes(anilistId, ctx)),
-    "2dhive": () => withCache(`epv:2dhive:${anilistId}`,  status, () => dhiveEpisodes(anilistId, ctx)),
     animenosub: () => withCache(`epv:animenosub:${anilistId}`, status, () => animenosubEpisodes(anilistId, ctx)),
     anizone: () => withCache(`epv:anizone:${anilistId}`, status, () => anizoneEpisodes(anilistId, ctx)),
     aniwaves: () => withCache(`epv:aniwaves:${anilistId}`, status, () => aniwavesEpisodes(anilistId, ctx)),
@@ -144,14 +141,13 @@ export async function buildEpisodesWithCache(anilistId, media, anizip) {
   const status = media?.status ?? "RELEASING";
   const ctx = { media, anizip, maxPages: undefined };
 
-  const [mkissa, reanime, anikoto, animegg, anineko, anidbapp, dhive, animenosub, anizone, aniwaves, anibd, senshi, kaa, animedunya, animeonsen] = await Promise.all([
+  const [mkissa, reanime, anikoto, animegg, anineko, anidbapp, animenosub, anizone, aniwaves, anibd, senshi, kaa, animedunya, animeonsen] = await Promise.all([
     safe("mkissa",     () => withCache(`epv:mkissa:${anilistId}`,     status, () => mkissaEpisodes(anilistId, ctx))),
     safe("reanime",    () => withCache(`epv:reanime:${anilistId}`,    status, () => reanimeEpisodes(anilistId, ctx))),
     safe("anikoto",    () => withCache(`epv:anikoto:${anilistId}`,    status, () => anikotoEpisodes(anilistId, ctx))),
     safe("animegg",    () => withCache(`epv:animegg:${anilistId}`,    status, () => animeggEpisodes(anilistId, ctx))),
     safe("anineko",    () => withCache(`epv:anineko:${anilistId}`,    status, () => aninekoEpisodes(anilistId, ctx))),
     safe("anidbapp",   () => withCache(`epv:anidbapp:${anilistId}`,   status, () => anidbappEpisodes(anilistId, ctx))),
-    safe("2dhive",     () => withCache(`epv:2dhive:${anilistId}`,     status, () => dhiveEpisodes(anilistId, ctx))),
     safe("animenosub", () => withCache(`epv:animenosub:${anilistId}`, status, () => animenosubEpisodes(anilistId, ctx))),
     safe("anizone",    () => withCache(`epv:anizone:${anilistId}`,    status, () => anizoneEpisodes(anilistId, ctx))),
     safe("aniwaves",   () => withCache(`epv:aniwaves:${anilistId}`,   status, () => aniwavesEpisodes(anilistId, ctx))),
@@ -169,7 +165,6 @@ export async function buildEpisodesWithCache(anilistId, media, anizip) {
     animegg:     animegg.ok     ? animegg.data     : { error: animegg.error,     stack: animegg.stack },
     anineko:     anineko.ok     ? anineko.data     : { error: anineko.error,     stack: anineko.stack },
     anidbapp:    anidbapp.ok    ? anidbapp.data    : { error: anidbapp.error,    stack: anidbapp.stack },
-    "2dhive":    dhive.ok       ? dhive.data       : { error: dhive.error,       stack: dhive.stack },
     animenosub:  animenosub.ok  ? animenosub.data  : { error: animenosub.error,  stack: animenosub.stack },
     anizone:     anizone.ok     ? anizone.data     : { error: anizone.error,     stack: anizone.stack },
     aniwaves:    aniwaves.ok    ? aniwaves.data    : { error: aniwaves.error,    stack: aniwaves.stack },

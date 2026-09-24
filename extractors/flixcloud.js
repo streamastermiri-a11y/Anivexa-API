@@ -15,6 +15,53 @@ function b64toU8(value) {
   return out;
 }
 
+function readLeb(bytes, position) {
+  let value = 0;
+  let shift = 0;
+  let next;
+  do {
+    next = bytes[position++];
+    value |= (next & 127) << shift;
+    shift += 7;
+  } while (next & 128);
+  return [value, position];
+}
+
+function extractPlaylistKey(wasmBytes) {
+  let position = 8;
+  while (position < wasmBytes.length) {
+    const section = wasmBytes[position++];
+    const [size, nextPosition] = readLeb(wasmBytes, position);
+    position = nextPosition;
+    if (section === 11) {
+      const end = position + size;
+      let dataPosition = position;
+      const [count, countPosition] = readLeb(wasmBytes, dataPosition);
+      dataPosition = countPosition;
+      for (let i = 0; i < count && dataPosition < end; i++) {
+        const [, flagsPosition] = readLeb(wasmBytes, dataPosition);
+        dataPosition = flagsPosition;
+        if (wasmBytes[dataPosition] !== 65) break;
+        dataPosition++;
+        const [, offsetPosition] = readLeb(wasmBytes, dataPosition);
+        dataPosition = offsetPosition;
+        if (wasmBytes[dataPosition] === 11) dataPosition++;
+        const [dataLength, lengthPosition] = readLeb(wasmBytes, dataPosition);
+        dataPosition = lengthPosition;
+        const segment = wasmBytes.slice(dataPosition, dataPosition + dataLength);
+        dataPosition += dataLength;
+        if (segment.length >= 64) {
+          const out = new Uint8Array(32);
+          for (let j = 0; j < 32; j++) out[j] = segment[j] ^ segment[j + 32];
+          return btoa(String.fromCharCode(...out));
+        }
+      }
+    }
+    position += size;
+  }
+  return null;
+}
+
 async function deriveFields(seed) {
   let first = seed;
   for (let i = 0; i < 3; i++) first = await sha256hex(first + i);
@@ -357,6 +404,7 @@ export async function extractFlixcloud(embedHtml, { fetchImpl = fetch, apiBase =
   const seedNumber = parseInt(seed.substring(0, 8), 16);
   const wasmPayload = b64toU8(data.w_payload ?? "");
   if (!wasmPayload.length) throw new Error("w_payload missing from embed data");
+  const playlistKey = extractPlaylistKey(wasmPayload);
   let wasmOut;
   try {
     wasmOut = runDecrypt(wasmPayload, fragment, keyFragment, tokenBytes, seedNumber);
@@ -389,6 +437,8 @@ export async function extractFlixcloud(embedHtml, { fetchImpl = fetch, apiBase =
   if (!url.startsWith("http")) throw new Error(`Unexpected decrypted value: ${url.substring(0, 60)}`);
   return {
     url,
+    key: playlistKey,
+    playlist_key: playlistKey,
     subtitles: data.subtitles ?? [],
     thumbnails_vtt: data.thumbnails_vtt ?? null,
     video_title: data.video_title ?? null,

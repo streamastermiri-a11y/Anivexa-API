@@ -254,6 +254,8 @@ async function handleWatch3(anilistId, audio, epNum, origin) {
     url: item.url,
     type: "hls",
     embed: source.dataLink,
+    key: item.key ?? null,
+    playlist_key: item.playlist_key ?? item.key ?? null,
     subtitles: item.subtitles ?? [],
     thumbnails_vtt: item.thumbnails_vtt ?? null,
     video_title: item.video_title ?? null,
@@ -308,41 +310,6 @@ async function handleStream3(anilistId, audio, epNum) {
   });
 }
 __name(handleStream3, "handleStream");
-async function handleProxy3(url) {
-  const target = url.searchParams.get("url");
-  const referer = url.searchParams.get("referer") ?? `${FLIX}/`;
-  if (!target) return json3({ error: "Missing required ?url= param" }, 400);
-  let targetUrl;
-  try {
-    targetUrl = new URL(target);
-  } catch {
-    return json3({ error: "Invalid url param" }, 400);
-  }
-  const upstream = await fetch(target, {
-    headers: {
-      "User-Agent": UA5,
-      "Accept": "*/*",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Referer": referer,
-      "Sec-Fetch-Dest": "empty",
-      "Sec-Fetch-Mode": "cors",
-      "Sec-Fetch-Site": "cross-site"
-    }
-  });
-  const ct = upstream.headers.get("Content-Type") ?? "";
-  const isM3U8 = ct.includes("mpegurl") || ct.includes("x-mpegurl") || targetUrl.pathname.endsWith(".m3u8") || targetUrl.pathname.endsWith(".m3u");
-  const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*" };
-  if (!upstream.ok) {
-    return new Response(await upstream.text(), { status: upstream.status, headers: { "Content-Type": ct || "text/plain", ...corsHeaders } });
-  }
-  if (isM3U8) {
-    const text = await upstream.text();
-    const rewritten = rewriteM3U8(text, target, url.origin);
-    return new Response(rewritten, { status: 200, headers: { "Content-Type": "application/vnd.apple.mpegurl", ...corsHeaders } });
-  }
-  return new Response(upstream.body, { status: upstream.status, headers: { "Content-Type": ct || "application/octet-stream", ...corsHeaders } });
-}
-__name(handleProxy3, "handleProxy");
 var reanime_default = {
   async fetch(request) {
     const url = new URL(request.url);
@@ -353,14 +320,13 @@ var reanime_default = {
     try {
       let m;
       if (path === "/healthz") return json3({ status: "ok", provider: "reanime" });
-      if (path === "/proxy") return await handleProxy3(url);
       m = path.match(/^\/episodes\/(\d+)$/);
       if (m) return await handleEpisodes3(m[1], url);
       m = path.match(/^\/watch\/(\d+)\/(sub|dub)\/(\d+)$/);
       if (m) return await handleWatch3(m[1], m[2], m[3], url.origin);
       m = path.match(/^\/stream\/(\d+)\/(sub|dub)\/(\d+)$/);
       if (m) return await handleStream3(m[1], m[2], m[3]);
-      return json3({ error: "Not found", routes: ["GET /episodes/:anilistId", "GET /watch/:anilistId/sub|dub/:ep", "GET /stream/:anilistId/sub|dub/:ep", "GET /proxy?url=&referer="] }, 404);
+      return json3({ error: "Not found", routes: ["GET /episodes/:anilistId", "GET /watch/:anilistId/sub|dub/:ep", "GET /stream/:anilistId/sub|dub/:ep"] }, 404);
     } catch (err) {
       return json3({ error: err.message, "Raw-ERROR": err.rawBody ?? null, ...err.debug ? { debug: err.debug } : {}, stack: err.stack }, 500);
     }

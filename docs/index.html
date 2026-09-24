@@ -60,7 +60,6 @@
         <a class="nav-item" href="#watch-animegg"><span class="method">GET</span>AnimeGG</a>
         <a class="nav-item" href="#watch-anineko"><span class="method">GET</span>AniNeko</a>
         <a class="nav-item" href="#watch-anidbapp"><span class="method">GET</span>AniDBApp</a>
-        <a class="nav-item" href="#watch-2dhive"><span class="method">GET</span>2DHive</a>
         <a class="nav-item" href="#watch-animenosub"><span class="method">GET</span>AnimeNoSub</a>
         <a class="nav-item" href="#watch-anizone"><span class="method">GET</span>AniZone</a>
         <a class="nav-item" href="#watch-aniwaves"><span class="method">GET</span>AniWaves</a>
@@ -80,7 +79,7 @@
     <section class="section section-hero" id="overview">
       <img src="logo.svg" alt="Anivexa" class="hero-logo"/>
       <h1>Anivexa API</h1>
-      <p>A unified anime streaming aggregator API. Resolve episode lists and stream sources across 15 providers using a single AniList ID — no scraping, no guessing, exact-match identity resolution.</p>
+      <p>A unified anime streaming aggregator API. Resolve episode lists and stream sources across 14 providers using a single AniList ID — no scraping, no guessing, exact-match identity resolution.</p>
       <div class="callout">
         <span class="callout-icon">💡</span>
         <span>All endpoints are read-only. No authentication required. All responses are JSON with CORS headers included.</span>
@@ -101,7 +100,7 @@
 
     <section class="section" id="providers-ref">
       <h2>Providers</h2>
-      <p>Fifteen providers are available. Each uses exact-match identity resolution via AniList or MAL IDs — no blind fuzzy matching.</p>
+      <p>Fourteen providers are available. Each uses exact-match identity resolution via AniList or MAL IDs — no blind fuzzy matching.</p>
       <div class="provider-grid">
         <div class="provider-card" style="--i:0"><div class="provider-name">mkissa</div><div class="provider-meta">MKissa</div></div>
         <div class="provider-card" style="--i:1"><div class="provider-name">reanime</div><div class="provider-meta">Reanime</div></div>
@@ -109,7 +108,6 @@
         <div class="provider-card" style="--i:3"><div class="provider-name">animegg</div><div class="provider-meta">AnimeGG</div></div>
         <div class="provider-card" style="--i:4"><div class="provider-name">anineko</div><div class="provider-meta">AniNeko</div></div>
         <div class="provider-card" style="--i:5"><div class="provider-name">anidbapp</div><div class="provider-meta">AniDBApp</div></div>
-        <div class="provider-card" style="--i:6"><div class="provider-name">2dhive</div><div class="provider-meta">2DHive</div></div>
         <div class="provider-card" style="--i:7"><div class="provider-name">animenosub</div><div class="provider-meta">AnimeNoSub</div></div>
         <div class="provider-card" style="--i:8"><div class="provider-name">anizone</div><div class="provider-meta">AniZone</div></div>
         <div class="provider-card" style="--i:9"><div class="provider-name">aniwaves</div><div class="provider-meta">AniWaves</div></div>
@@ -392,48 +390,6 @@
               <tr><td class="param-name">:ep</td><td class="param-type">integer</td><td class="param-desc">Episode number</td></tr>
             </tbody>
           </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="watch-2dhive">
-      <h2>2DHive</h2>
-      <div class="endpoint">
-        <div class="endpoint-head">
-          <span class="method-pill get">GET</span>
-          <span class="endpoint-path">/watch/2dhive/<span class="param">:id</span>/<span class="param">sub|dub</span>/2dhive-<span class="param">:ep</span></span>
-          <a class="try-btn" href="/watch/2dhive/16498/sub/2dhive-1" target="_blank">Try it ↗</a>
-        </div>
-        <div class="endpoint-body">
-          <p class="endpoint-desc">Returns stream sources from 2DHive.</p>
-          <table class="params-table">
-            <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
-            <tbody>
-              <tr><td class="param-name">:id</td><td class="param-type">integer</td><td class="param-desc">AniList media ID</td></tr>
-              <tr><td class="param-name">sub|dub</td><td class="param-type">string</td><td class="param-desc">Audio track preference</td></tr>
-              <tr><td class="param-name">:ep</td><td class="param-type">integer</td><td class="param-desc">Episode number</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div class="endpoint">
-        <div class="endpoint-head">
-          <span class="method-pill get">GET</span>
-          <span class="endpoint-path">/stream/2dhive/<span class="param">:id</span>/<span class="param">sub|dub</span>/<span class="param">:ep</span></span>
-          <a class="try-btn" href="/stream/2dhive/16498/sub/1" target="_blank">Try it ↗</a>
-        </div>
-        <div class="endpoint-body">
-          <p class="endpoint-desc">Direct stream variant for 2DHive.</p>
-        </div>
-      </div>
-      <div class="endpoint">
-        <div class="endpoint-head">
-          <span class="method-pill get">GET</span>
-          <span class="endpoint-path">/stream/2dhive/download/<span class="param">:id</span>/<span class="param">sub|dub</span>/<span class="param">:ep</span></span>
-          <a class="try-btn" href="/stream/2dhive/download/16498/sub/1" target="_blank">Try it ↗</a>
-        </div>
-        <div class="endpoint-body">
-          <p class="endpoint-desc">Download variant — returns a direct downloadable stream URL from 2DHive.</p>
         </div>
       </div>
     </section>

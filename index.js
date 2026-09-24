@@ -6,7 +6,6 @@ import anikotoHandler              from "./providers/anikoto.js";
 import animeggHandler              from "./providers/animegg.js";
 import aninekoHandler              from "./providers/anineko.js";
 import anidbappHandler             from "./providers/anidbapp.js";
-import dhiveHandler                from "./providers/2dhive.js";
 import animenosubHandler           from "./providers/animenosub.js";
 import anizoneHandler              from "./providers/anizone.js";
 import aniwavesHandler             from "./providers/aniwaves.js";
@@ -206,16 +205,6 @@ export default {
       );
     }
 
-    m = path.match(/^\/watch\/2dhive\/(\d+)\/(sub|dub)\/2dhive-(\d+)\/?$/);
-    if (m) {
-      const [, id, audio, ep] = m;
-      return cachedWatch(
-        `watch:2dhive:${id}:${audio}:${ep}`,
-        () => dhiveHandler.fetch(request),
-        SIGNED_STREAM_WATCH_TTL
-      );
-    }
-
     m = path.match(/^\/watch\/animenosub\/(\d+)\/(sub|dub)\/animenosub-(\d+)\/?$/);
     if (m) {
       const [, id, audio, ep] = m;
@@ -289,12 +278,6 @@ export default {
       );
     }
 
-    m = path.match(/^\/stream\/2dhive\/(\d+)\/(sub|dub)\/(\d+)\/?$/);
-    if (m) return dhiveHandler.fetch(request);
-
-    m = path.match(/^\/stream\/2dhive\/download\/(\d+)\/(sub|dub)\/(\d+)\/?$/);
-    if (m) return dhiveHandler.fetch(request);
-
     return json({
       name: "Anivexa API 2.2.1",
       cache: _CACHE_ENABLED,
@@ -305,7 +288,6 @@ export default {
         "animegg",
         "anineko",
         "anidbapp",
-        "2dhive",
         "animenosub",
         "anizone",
         "aniwaves",
@@ -326,9 +308,6 @@ export default {
         "/watch/animegg/:id/sub|dub/animegg-:ep",
         "/watch/anineko/:id/sub|dub/anineko-:ep",
         "/watch/anidbapp/:id/sub|dub/anidbapp-:ep",
-        "/watch/2dhive/:id/sub|dub/2dhive-:ep",
-        "/stream/2dhive/:id/sub|dub/:ep",
-        "/stream/2dhive/download/:id/sub|dub/:ep",
         "/watch/animenosub/:id/sub|dub/animenosub-:ep",
         "/watch/anizone/:id/sub|dub/anizone-:ep",
         "/watch/aniwaves/:id/sub|dub/aniwaves-:ep",
