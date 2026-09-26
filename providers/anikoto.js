@@ -214,7 +214,13 @@ export async function getEpisodes(anilistId, ctx = {}) {
     const hasSub = getAttr("sub") === "1";
     const hasDub = getAttr("dub") === "1";
     const malAttr = getAttr("mal");
-    if (!firstMal && malAttr) firstMal = parseInt(malAttr);
+    const itemMalId = malAttr ? Number.parseInt(malAttr, 10) : null;
+    if (itemMalId && media.idMal && itemMalId !== Number(media.idMal)) {
+      throw new Error(
+        `Anikoto MAL ID mismatch for AniList ${anilistId}: expected ${media.idMal}, got ${itemMalId}`
+      );
+    }
+    if (!firstMal && itemMalId) firstMal = itemMalId;
 
     const titleMatch = inner.match(/<span class="d-title"[^>]*>([\s\S]*?)<\/span>/);
     const parsedTitle = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").trim() : "";

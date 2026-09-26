@@ -106,8 +106,8 @@ export function resolveProviders(rawNames) {
 function providerFns(anilistId, status, ctx) {
   return {
     mkissa: () => withCache(`epv:mkissa:${anilistId}`, status, () => mkissaEpisodes(anilistId, ctx)),
-    reanime:  () => withCache(`epv:reanime:${anilistId}`, status, () => reanimeEpisodes(anilistId, ctx)),
-    anikoto:  () => withCache(`epv:anikoto:${anilistId}`, status, () => anikotoEpisodes(anilistId, ctx)),
+    reanime:  () => withCache(`epv:reanime:v2:${anilistId}`, status, () => reanimeEpisodes(anilistId, ctx)),
+    anikoto:  () => withCache(`epv:anikoto:v2:${anilistId}`, status, () => anikotoEpisodes(anilistId, ctx)),
     animegg:  () => withCache(`epv:animegg:${anilistId}`, status, () => animeggEpisodes(anilistId, ctx)),
     anineko:  () => withCache(`epv:anineko:${anilistId}`, status, () => aninekoEpisodes(anilistId, ctx)),
     anidbapp: () => withCache(`epv:anidbapp:${anilistId}`, status, () => anidbappEpisodes(anilistId, ctx)),
@@ -143,8 +143,8 @@ export async function buildEpisodesWithCache(anilistId, media, anizip) {
 
   const [mkissa, reanime, anikoto, animegg, anineko, anidbapp, animenosub, anizone, aniwaves, anibd, senshi, kaa, animedunya, animeonsen] = await Promise.all([
     safe("mkissa",     () => withCache(`epv:mkissa:${anilistId}`,     status, () => mkissaEpisodes(anilistId, ctx))),
-    safe("reanime",    () => withCache(`epv:reanime:${anilistId}`,    status, () => reanimeEpisodes(anilistId, ctx))),
-    safe("anikoto",    () => withCache(`epv:anikoto:${anilistId}`,    status, () => anikotoEpisodes(anilistId, ctx))),
+    safe("reanime",    () => withCache(`epv:reanime:v2:${anilistId}`,    status, () => reanimeEpisodes(anilistId, ctx))),
+    safe("anikoto",    () => withCache(`epv:anikoto:v2:${anilistId}`,    status, () => anikotoEpisodes(anilistId, ctx))),
     safe("animegg",    () => withCache(`epv:animegg:${anilistId}`,    status, () => animeggEpisodes(anilistId, ctx))),
     safe("anineko",    () => withCache(`epv:anineko:${anilistId}`,    status, () => aninekoEpisodes(anilistId, ctx))),
     safe("anidbapp",   () => withCache(`epv:anidbapp:${anilistId}`,   status, () => anidbappEpisodes(anilistId, ctx))),

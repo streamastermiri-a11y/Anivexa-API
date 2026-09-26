@@ -9,8 +9,10 @@ var FLIX = "https://flixcloud.cc";
 var ANIZIP2 = "https://api.ani.zip/mappings";
 var UA5 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 var H = { "User-Agent": UA5, Accept: "application/json, */*" };
-async function searchReanime(query) {
-  const data = await fetch(`${BASE}/api/v1/search?${new URLSearchParams({ q: query, limit: 10 })}`, { headers: H }).then(async (r) => {
+async function searchReanime(query, genre = null) {
+  const params = new URLSearchParams({ q: query, limit: 10 });
+  if (genre) params.set("genre", genre);
+  const data = await fetch(`${BASE}/api/v1/search?${params}`, { headers: H }).then(async (r) => {
     const _raw = await r.text();
     if (!r.ok) { const _e = new Error(`reanime search ${r.status}`); _e.rawBody = _raw; throw _e; }
     try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
@@ -43,10 +45,14 @@ async function resolveSeries(anilistId, ctx = {}) {
   const media = ctx.media ?? await getMedia(anilistId);
   const malId = media?.idMal ?? null;
   const queries = buildTitles(media, ctx.anizip).slice(0, 5);
+  const searchRequests = queries.map((query) => searchReanime(query));
+  if (media?.genres?.includes("Hentai")) {
+    searchRequests.push(...queries.map((query) => searchReanime(query, "Hentai")));
+  }
 
   const candidates = new Map();
-  await Promise.all(queries.map(async (q) => {
-    for (const r of await searchReanime(q).catch(() => [])) {
+  await Promise.all(searchRequests.map(async (request) => {
+    for (const r of await request.catch(() => [])) {
       if (r?.anime_id && !candidates.has(r.anime_id)) candidates.set(r.anime_id, r);
     }
   }));
