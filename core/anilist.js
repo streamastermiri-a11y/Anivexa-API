@@ -55,7 +55,7 @@ async function fetchFromAniListWeb(body) {
 }
 
 async function fetchFromAniList(id) {
-  const fullQuery = `query($id:Int){Media(id:$id,type:ANIME){id title{english romaji native} status format episodes seasonYear startDate{year} synonyms nextAiringEpisode{episode airingAt timeUntilAiring}}}`;
+  const fullQuery = `query($id:Int){Media(id:$id,type:ANIME){id title{english romaji native} status format episodes seasonYear startDate{year} genres synonyms nextAiringEpisode{episode airingAt timeUntilAiring}}}`;
   const body = JSON.stringify({ query: fullQuery, variables: { id } });
   const res = await fetch("https://graphql.anilist.co", {
     method: "POST",
@@ -93,6 +93,7 @@ async function getMedia(anilistId) {
       seasonYear: al.seasonYear ?? null,
       startDate: al.startDate ?? null,
       nextAiringEpisode: al.nextAiringEpisode ?? null,
+      genres: Array.isArray(al.genres) ? al.genres : [],
       synonyms: Array.isArray(al.synonyms) ? al.synonyms : [],
     };
     resolved.set(id, media);
