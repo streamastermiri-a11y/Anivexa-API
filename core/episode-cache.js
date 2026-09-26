@@ -8,6 +8,7 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const FULL_TTL = 30 * DAY;
+const EPISODE_CACHE_VERSION = "v2";
 const NORMAL_PROBE_INTERVAL = 15 * MIN;
 const AIRING_PROBE_INTERVAL = 5 * MIN;
 const AIRING_EARLY_WINDOW = 10 * MIN;
@@ -61,6 +62,9 @@ function resolveShared(anilistId, freshMedia = false) {
 async function clearProviderCache(anilistId, media) {
   for (const p of ["pahe", "manga", "reanime", "anikoto", "animegg", "anineko", "anidbapp", "anizone", "aniwaves", "animeonsen"]) {
     await delAsync(`epv:${p}:${anilistId}`);
+    if (p === "reanime" || p === "anikoto") {
+      await delAsync(`epv:${p}:v2:${anilistId}`);
+    }
   }
   if (media?.idMal) {
     await delAsync(`jm:${media.idMal}`);
@@ -150,7 +154,12 @@ function scheduleRefresh(anilistId, entry, env) {
 
     const result = await buildResponse(anilistId, media, anizip, true);
     const latestEpisode = latestEpisodeFromResponse(result);
-    await setAsync(`episodes:${anilistId}`, result, FULL_TTL, NORMAL_PROBE_INTERVAL);
+    await setAsync(
+      `episodes:${EPISODE_CACHE_VERSION}:${anilistId}`,
+      result,
+      FULL_TTL,
+      NORMAL_PROBE_INTERVAL
+    );
     writeSyncState(anilistId, {
       lastProbeAt: Date.now(),
       lastSyncAt: Date.now(),
@@ -175,7 +184,7 @@ function scheduleRefresh(anilistId, entry, env) {
 }
 
 export async function getEpisodesResponse(anilistId, env) {
-  const cacheKey = `episodes:${anilistId}`;
+  const cacheKey = `episodes:${EPISODE_CACHE_VERSION}:${anilistId}`;
   const entry = await getAsync(cacheKey);
 
   if (entry && hasCurrentProviders(entry.data)) {
