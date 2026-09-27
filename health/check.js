@@ -24,11 +24,40 @@
 
 import { getAsync, setAsync, isFresh } from "../core/smartcache.js";
 
-const PROVIDERS = [
+// Provider list is discovered at runtime from this API's own root
+// endpoint (GET /) instead of being duplicated here as a hardcoded
+// array. index.js's root response already carries the real, currently-
+// registered provider list (it's what /'s own `providers: [...]` field
+// is built from) — reading it means this file never needs a manual
+// update again, and never silently drifts out of sync with it. That
+// drift is exactly how "2dhive" kept showing up in /health/status well
+// after its provider file — and its entry in index.js's own list — were
+// both removed: this file simply never learned about the removal,
+// because it never looked upstream in the first place, it just kept its
+// own permanently-frozen copy. discoverProviders() below is a plain
+// fetch(), not a JS import, so this still honors this folder's own
+// "never imports upstream files" rule (see the top-of-file note above).
+// FALLBACK_PROVIDERS only matters if that fetch itself ever fails (e.g.
+// the deployment is unreachable) — keep it reasonably current, but it's
+// a last resort, not the thing this now depends on day to day.
+const FALLBACK_PROVIDERS = [
   "mkissa", "reanime", "anikoto", "animegg", "anineko", "anidbapp",
-  "2dhive", "animenosub", "anizone", "aniwaves", "anibd", "senshi",
-  "kaa", "animedunya", "animeonsen",
+  "animenosub", "anizone", "aniwaves", "anibd", "senshi", "kaa",
+  "animedunya", "animeonsen",
 ];
+
+async function discoverProviders(baseUrl) {
+  try {
+    const res = await fetch(`${baseUrl}/`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return FALLBACK_PROVIDERS;
+    const data = await res.json();
+    return Array.isArray(data.providers) && data.providers.length
+      ? data.providers
+      : FALLBACK_PROVIDERS;
+  } catch {
+    return FALLBACK_PROVIDERS;
+  }
+}
 
 // Default is AniList id 16498 (Attack on Titan Season 1) — widely
 // carried and well-known, chosen to minimize "provider is actually
@@ -85,7 +114,8 @@ async function checkOneProvider(baseUrl, providerId) {
 }
 
 async function runFullCheck(baseUrl) {
-  const providers = await Promise.all(PROVIDERS.map((id) => checkOneProvider(baseUrl, id)));
+  const providerIds = await discoverProviders(baseUrl);
+  const providers = await Promise.all(providerIds.map((id) => checkOneProvider(baseUrl, id)));
   return {
     checkedAt: new Date().toISOString(),
     testAnilistId: TEST_ANILIST_ID,
