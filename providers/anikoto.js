@@ -1,5 +1,6 @@
 import { getMedia } from '../core/anilist.js';
 import { extractMegaPlayDetails } from "../extractors/megaplay.js";
+import { buildTitleSearchQueries, buildTitles, decodeEntities, titleIdentityScore } from "../core/new-provider-utils.js";
 
 const ANIKOTO = "https://anikototv.to";
 const MAPPER = "https://mapper.nekostream.site/api/mal";
@@ -91,8 +92,8 @@ async function searchAnikoto(query) {
   let m;
   while ((m = re.exec(searchHtml)) !== null) {
     const slug = m[1];
-    const jp = m[2].trim();
-    const name = m[3].replace(/<[^>]*>/g, "").trim();
+    const jp = decodeEntities(m[2].trim());
+    const name = decodeEntities(m[3].replace(/<[^>]*>/g, "").trim());
     candidates.push({ slug, name, jp });
   }
 
@@ -111,37 +112,129 @@ async function searchAnikoto(query) {
   });
 }
 
-async function findAnikotoShow(media) {
-  const primaryEn = media.title?.english;
-  const primaryRom = media.title?.romaji;
-  const synonyms = media.synonyms || [];
+function parseEpisodeRows(html) {
+  const rows = [];
+  const re = /<a\s+[^>]*data-id="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+  for (const match of html.matchAll(re)) {
+    const tag = match[0];
+    const getAttr = (name) => tag.match(new RegExp(`data-${name}="([^"]*)"`))?.[1] ?? "";
+    const number = Number.parseInt(getAttr("num"), 10);
+    if (!Number.isInteger(number)) continue;
+    const title = decodeEntities(match[2].match(/<span\s+class="d-title"[^>]*>([\s\S]*?)<\/span>/i)?.[1]?.replace(/<[^>]*>/g, "").trim() ?? "");
+    rows.push({
+      number,
+      ids: getAttr("ids"),
+      hasSub: getAttr("sub") === "1",
+      hasDub: getAttr("dub") === "1",
+      malId: Number.parseInt(getAttr("mal"), 10) || null,
+      slug: getAttr("slug"),
+      timestamp: getAttr("timestamp"),
+      title: title || `Episode ${number}`,
+    });
+  }
+  return rows;
+}
 
-  const keywords = [...new Set([primaryEn, primaryRom, ...synonyms].filter(Boolean))];
+async function inspectAnikotoCandidate(candidate) {
+  const watchHtml = await httpGet(`${ANIKOTO}/watch/${candidate.slug}`, { Referer: `${ANIKOTO}/` });
+  const showId = watchHtml.match(/data-id="(\d+)"/)?.[1];
+  if (!showId) return null;
+  const listJson = await getJSON(`${ANIKOTO}/ajax/episode/list/${showId}`, {
+    "X-Requested-With": "XMLHttpRequest",
+    Referer: `${ANIKOTO}/watch/${candidate.slug}`,
+  });
+  const episodes = parseEpisodeRows(listJson.result || "");
+  return episodes.length ? { ...candidate, showId, episodes } : null;
+}
+
+async function findAnikotoShow(media, anizip) {
+  const mappings = anizip ?? await getJSON(`${ANIZIP}?anilist_id=${media.id}`).catch(() => null);
+  const titles = [...new Set(buildTitles(media, mappings).filter(Boolean))];
+  const keywords = buildTitleSearchQueries(titles, 18);
   const allCandidatesMap = new Map();
+  for (let index = 0; index < keywords.length; index += 4) {
+    const results = await Promise.all(keywords.slice(index, index + 4).map((keyword) => searchAnikoto(keyword).catch(() => [])));
+    for (const list of results) for (const candidate of list) allCandidatesMap.set(candidate.slug, candidate);
+  }
 
-  for (const k of keywords.slice(0, 5)) {
-    const res = await searchAnikoto(k).catch(() => []);
-    for (const c of res) {
-      allCandidatesMap.set(c.slug, c);
+  const candidates = [...allCandidatesMap.values()].map((candidate) => {
+    const titleScore = titleIdentityScore(titles, [candidate.name, candidate.jp, candidate.slug.replace(/-/g, " ")]);
+    return { ...candidate, titleScore, legacyScore: scoreCandidate(candidate, media.title?.english, media.title?.romaji, media.synonyms || []) };
+  }).filter((candidate) => candidate.titleScore >= 0.28)
+    .sort((left, right) => right.titleScore - left.titleScore || right.legacyScore - left.legacyScore)
+    .slice(0, 12);
+
+  if (!candidates.length) throw new Error(`No confident Anikoto title candidates for AniList ${media.id}`);
+  const inspected = [];
+  for (let index = 0; index < candidates.length; index += 4) {
+    const batch = await Promise.allSettled(candidates.slice(index, index + 4).map(inspectAnikotoCandidate));
+    for (const result of batch) if (result.status === "fulfilled" && result.value) inspected.push(result.value);
+  }
+
+  const expectedMal = Number(media.idMal) || null;
+  if (expectedMal) {
+    const exact = inspected.filter((candidate) => candidate.episodes.some((episode) => episode.malId === expectedMal));
+    if (exact.length) {
+      const expectedEpisodes = Number(media.episodes) > 0 ? Number(media.episodes) : null;
+      const getMatchMetrics = (candidate) => {
+        const rows = candidate.episodes.filter((episode) => episode.malId === expectedMal);
+        const numbers = new Set(rows.map((episode) => episode.number));
+        const expectedRange = expectedEpisodes
+          ? new Set(rows.map((episode) => episode.number).filter((number) => number >= 1 && number <= expectedEpisodes)).size
+          : 0;
+        return {
+          completeRange: expectedEpisodes !== null && expectedRange === expectedEpisodes,
+          exactCount: expectedEpisodes !== null && numbers.size === expectedEpisodes,
+          expectedRange,
+          excess: expectedEpisodes === null ? 0 : Math.max(0, numbers.size - expectedEpisodes),
+        };
+      };
+      exact.sort((left, right) => {
+        const leftMetrics = getMatchMetrics(left);
+        const rightMetrics = getMatchMetrics(right);
+        return Number(rightMetrics.completeRange) - Number(leftMetrics.completeRange)
+          || Number(rightMetrics.exactCount) - Number(leftMetrics.exactCount)
+          || rightMetrics.expectedRange - leftMetrics.expectedRange
+          || leftMetrics.excess - rightMetrics.excess
+          || right.titleScore - left.titleScore;
+      });
+      const chosen = exact[0];
+      const episodes = chosen.episodes.filter((episode) => episode.malId === expectedMal);
+      const numbers = new Set(episodes.map((episode) => episode.number));
+      for (const candidate of exact.slice(1)) {
+        const rows = candidate.episodes.filter((episode) => episode.malId === expectedMal);
+        if (!rows.length || rows.some((episode) => numbers.has(episode.number))) continue;
+        for (const episode of rows) {
+          numbers.add(episode.number);
+          episodes.push(episode);
+        }
+      }
+      episodes.sort((left, right) => left.number - right.number);
+      if (expectedEpisodes && episodes.length > expectedEpisodes) {
+        const expectedRange = new Map();
+        for (const episode of episodes) {
+          if (episode.number >= 1 && episode.number <= expectedEpisodes && !expectedRange.has(episode.number)) {
+            expectedRange.set(episode.number, episode);
+          }
+        }
+        if (expectedRange.size === expectedEpisodes) {
+          episodes.splice(0, episodes.length, ...[...expectedRange.values()].sort((left, right) => left.number - right.number));
+        }
+      }
+      return { ...chosen, title: chosen.name, episodes, malId: expectedMal };
     }
   }
 
-  const candidates = Array.from(allCandidatesMap.values());
-  if (!candidates.length) {
-    throw new Error(`No results found on Anikoto for: ${primaryEn || primaryRom}`);
+  const viable = inspected.filter((candidate) => {
+    const hasProviderMal = candidate.episodes.some((episode) => episode.malId);
+    return candidate.titleScore >= 0.72 && (!expectedMal || !hasProviderMal);
+  }).sort((left, right) => right.titleScore - left.titleScore || right.legacyScore - left.legacyScore);
+  const chosen = viable[0];
+  const runnerUp = viable[1];
+  if (!chosen || runnerUp && chosen.titleScore - runnerUp.titleScore < 0.08) {
+    throw new Error(`No confident Anikoto identity match for AniList ${media.id}`);
   }
-
-  const scored = candidates.map(c => ({
-    ...c,
-    score: scoreCandidate(c, primaryEn, primaryRom, synonyms)
-  })).sort((a, b) => b.score - a.score);
-
-  const chosen = scored[0];
-  const watchHtml = await httpGet(`${ANIKOTO}/watch/${chosen.slug}`, { Referer: `${ANIKOTO}/` });
-  const showIdMatch = watchHtml.match(/data-id="(\d+)"/);
-  if (!showIdMatch) throw new Error(`Could not find show ID for slug: ${chosen.slug}`);
-
-  return { slug: chosen.slug, showId: showIdMatch[1], title: chosen.name };
+  return { ...chosen, title: chosen.name, malId: expectedMal };
 }
 
 function mapTrack(t, source) {
@@ -180,52 +273,12 @@ export async function getEpisodes(anilistId, ctx = {}) {
   const media = ctx.media || await getMedia(anilistId);
   if (!media) throw new Error(`Could not resolve media for AniList ID: ${anilistId}`);
 
-  const [show, anizipRes] = await Promise.all([
-    findAnikotoShow(media),
-    ctx.anizip
-      ? Promise.resolve(ctx.anizip)
-      : getJSON(`${ANIZIP}?anilist_id=${anilistId}`).catch(() => null)
-  ]);
-
-  const listJson = await getJSON(`${ANIKOTO}/ajax/episode/list/${show.showId}`, {
-    "X-Requested-With": "XMLHttpRequest",
-    Referer: `${ANIKOTO}/watch/${show.slug}`
-  });
-
-  const html = listJson.result || "";
+  const anizipRes = ctx.anizip ?? await getJSON(`${ANIZIP}?anilist_id=${anilistId}`).catch(() => null);
+  const show = await findAnikotoShow(media, anizipRes);
   const sub = [];
   const dub = [];
-
-  let firstMal = media.idMal || null;
-
-  const re = /<a\s+[^>]*data-id="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const tag = m[0];
-    const inner = m[2];
-    const getAttr = (attr) => {
-      const x = tag.match(new RegExp(`data-${attr}="([^"]*)"`));
-      return x ? x[1] : "";
-    };
-
-    const numStr = getAttr("num");
-    if (!numStr) continue;
-    const num = parseInt(numStr);
-    const hasSub = getAttr("sub") === "1";
-    const hasDub = getAttr("dub") === "1";
-    const malAttr = getAttr("mal");
-    const itemMalId = malAttr ? Number.parseInt(malAttr, 10) : null;
-    if (itemMalId && media.idMal && itemMalId !== Number(media.idMal)) {
-      throw new Error(
-        `Anikoto MAL ID mismatch for AniList ${anilistId}: expected ${media.idMal}, got ${itemMalId}`
-      );
-    }
-    if (!firstMal && itemMalId) firstMal = itemMalId;
-
-    const titleMatch = inner.match(/<span class="d-title"[^>]*>([\s\S]*?)<\/span>/);
-    const parsedTitle = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").trim() : "";
-    const epTitle = parsedTitle || `Episode ${num}`;
-
+  for (const row of show.episodes) {
+    const num = row.number;
     const azEp = anizipRes?.episodes?.[String(num)] ?? {};
     const img = azEp.image || null;
     const desc = azEp.overview || azEp.summary || null;
@@ -233,7 +286,7 @@ export async function getEpisodes(anilistId, ctx = {}) {
 
     const base = {
       number: num,
-      title: epTitle,
+      title: row.title,
       duration: null,
       filler: false,
       uncensored: false,
@@ -242,14 +295,14 @@ export async function getEpisodes(anilistId, ctx = {}) {
       airDate: airDate
     };
 
-    if (hasSub) {
+    if (row.hasSub) {
       sub.push({
         id: `watch/anikoto/${anilistId}/sub/anikoto-${num}`,
         ...base,
         audio: "sub"
       });
     }
-    if (hasDub) {
+    if (row.hasDub) {
       dub.push({
         id: `watch/anikoto/${anilistId}/dub/anikoto-${num}`,
         ...base,
@@ -265,7 +318,7 @@ export async function getEpisodes(anilistId, ctx = {}) {
     meta: {
       title: show.title,
       slug: show.slug,
-      malId: firstMal,
+      malId: show.malId,
       source: "anikoto"
     },
     episodes: { sub, dub }
@@ -282,46 +335,22 @@ async function handleWatch(anilistId, audio, epNum, ctx = {}) {
     return jsonResponse({ error: `Could not resolve media for AniList ID: ${anilistId}` }, 400);
   }
 
-  const show = await findAnikotoShow(media);
-  const listJson = await getJSON(`${ANIKOTO}/ajax/episode/list/${show.showId}`, {
-    "X-Requested-With": "XMLHttpRequest",
-    Referer: `${ANIKOTO}/watch/${show.slug}`
-  });
-
-  const html = listJson.result || "";
-  let targetEp = null;
-  const re = /<a\s+[^>]*data-id="([^"]*)"[^>]*>/g;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const tag = m[0];
-    const getAttr = (attr) => {
-      const x = tag.match(new RegExp(`data-${attr}="([^"]*)"`));
-      return x ? x[1] : "";
-    };
-    if (parseInt(getAttr("num")) === epNum) {
-      targetEp = {
-        ids: getAttr("ids"),
-        mal: getAttr("mal"),
-        slug: getAttr("slug"),
-        timestamp: getAttr("timestamp")
-      };
-      break;
-    }
-  }
+  const show = await findAnikotoShow(media, ctx.anizip);
+  const targetEp = show.episodes.find((episode) => episode.number === Number(epNum) && episode[audio === "sub" ? "hasSub" : "hasDub"]);
 
   if (!targetEp?.ids) {
     return jsonResponse({ error: `Episode ${epNum} not found for show: ${show.title}` }, 404);
   }
 
-  const malIdNum = media.idMal || (targetEp.mal ? parseInt(targetEp.mal) : null);
+  const malIdNum = targetEp.malId || media.idMal || null;
 
   const [serverDataRes, mapperRes] = await Promise.allSettled([
     getJSON(`${ANIKOTO}/ajax/server/list?servers=${encodeURIComponent(targetEp.ids)}`, {
       "X-Requested-With": "XMLHttpRequest",
       Referer: `${ANIKOTO}/`
     }),
-    (targetEp.mal && targetEp.slug && targetEp.timestamp)
-      ? getJSON(`${MAPPER}/${targetEp.mal}/${targetEp.slug}/${targetEp.timestamp}`, { Referer: `${ANIKOTO}/` })
+    (targetEp.malId && targetEp.slug && targetEp.timestamp)
+      ? getJSON(`${MAPPER}/${targetEp.malId}/${targetEp.slug}/${targetEp.timestamp}`, { Referer: `${ANIKOTO}/` })
       : Promise.resolve(null)
   ]);
 
