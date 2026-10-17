@@ -11,7 +11,6 @@
 ![Views](https://visitor-badge.laobi.icu/badge?page_id=walterwhite-69.Anivexa-API)
 [![GitHub stars](https://img.shields.io/github/stars/walterwhite-69/Anivexa-API?style=flat-square&color=yellow)](https://github.com/walterwhite-69/Anivexa-API/stargazers)
 
-[Join the Discord](https://discord.gg/MARQ9z9QSX) (Not affiliated with or connected to this API; not a support server.)
 
 </div>
 
