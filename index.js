@@ -67,11 +67,6 @@ export default {
   async fetch(request, env) {
     const url  = new URL(request.url);
     const path = url.pathname;
-    // [health-hook] routes /health/* to health/check.js. An upstream sync can overwrite index.js;
-    // if /health/status stops working, run `node health/install-hook.js` (see health/README.md).
-    if (request.method !== "OPTIONS" && (path === "/health" || path.startsWith("/health/"))) {
-      return (await import("./health/check.js")).default(request);
-    }
 
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -82,6 +77,11 @@ export default {
           "Access-Control-Allow-Headers": "*",
         },
       });
+    }
+
+    // [fork] /health/* → health/check.js (see health/README.md)
+    if (path === "/health" || path.startsWith("/health/")) {
+      return (await import("./health/check.js")).default(request, env, this?.fetch && ((r) => this.fetch(r, env)));
     }
 
     let m = path.match(/^\/map\/(\d+)\/?$/);
