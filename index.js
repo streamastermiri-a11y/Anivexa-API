@@ -79,11 +79,6 @@ export default {
       });
     }
 
-    // [fork] /health/* → health/check.js (see health/README.md)
-    if (path === "/health" || path.startsWith("/health/")) {
-      return (await import("./health/check.js")).default(request, env, this?.fetch && ((r) => this.fetch(r, env)));
-    }
-
     let m = path.match(/^\/map\/(\d+)\/?$/);
     if (m) {
       const anilistId = m[1];
